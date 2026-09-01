@@ -16,6 +16,12 @@ describe('server module boundary harness', () => {
       layer: 'services',
       validModule: true,
     })
+    expect(classifyServerFile('modules/research/workflows/index.ts')).toMatchObject({
+      architecture: 'target',
+      domain: 'research',
+      layer: 'workflows',
+      validModule: true,
+    })
     expect(classifyServerFile('modules/other/services/example.ts')).toMatchObject({
       architecture: 'target',
       domain: 'other',
@@ -33,10 +39,15 @@ describe('server module boundary harness', () => {
 
   it('enforces the acyclic domain dependency matrix', () => {
     expect(forbiddenDomainDependency('studio', 'hermes')).toBe(true)
+    expect(forbiddenDomainDependency('studio', 'research')).toBe(true)
     expect(forbiddenDomainDependency('hermes', 'ekko')).toBe(true)
     expect(forbiddenDomainDependency('coding-agents', 'hermes')).toBe(true)
+    expect(forbiddenDomainDependency('hermes', 'research')).toBe(true)
+    expect(forbiddenDomainDependency('research', 'hermes')).toBe(true)
     expect(forbiddenDomainDependency('hermes', 'studio')).toBe(false)
+    expect(forbiddenDomainDependency('research', 'studio')).toBe(false)
     expect(forbiddenDomainDependency('bootstrap', 'ekko')).toBe(false)
+    expect(forbiddenDomainDependency('bootstrap', 'research')).toBe(false)
   })
 
   it('allows agents to consume only Studio contracts and public APIs', () => {
@@ -50,6 +61,14 @@ describe('server module boundary harness', () => {
     )).toEqual([
       'modules/ekko/services/run.ts must use Studio contracts/public APIs, not Studio internal path modules/studio/services/config/service.ts',
     ])
+    expect(validateTargetDependency(
+      'modules/research/library/index.ts',
+      'modules/studio/public/files.ts',
+    )).toEqual([])
+    expect(validateTargetDependency(
+      'modules/research/library/index.ts',
+      'modules/studio/repositories/settings/store.ts',
+    )[0]).toContain('must use Studio contracts/public APIs')
   })
 
   it('keeps routes out of services and agent modules apart', () => {

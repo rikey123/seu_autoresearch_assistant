@@ -9,13 +9,18 @@ import ts from 'typescript'
 export const SERVER_SOURCE_ROOT = 'packages/server/src'
 export const TARGET_MODULES = Object.freeze([
   'studio',
+  'research',
   'hermes',
   'ekko',
   'coding-agents',
 ])
 
 const TARGET_MODULE_SET = new Set(TARGET_MODULES)
-const AGENT_MODULE_SET = new Set(['hermes', 'ekko', 'coding-agents'])
+// Domains that may consume Studio only through contracts/public facades.
+// `research` is a product domain, not an agent family, but it follows the
+// same isolation rules: Studio never imports it, and it never imports
+// Studio internals or another isolated domain.
+const ISOLATED_DOMAIN_SET = new Set(['research', 'hermes', 'ekko', 'coding-agents'])
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts'])
 const RESOLUTION_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
 const STUDIO_AGENT_ENTRY_POINTS = new Set(['contracts', 'public'])
@@ -167,8 +172,8 @@ export function resolveServerImport(fromFile, specifier, allFiles) {
 
 export function forbiddenDomainDependency(fromDomain, toDomain) {
   if (fromDomain === 'bootstrap' || fromDomain === toDomain) return false
-  if (fromDomain === 'studio') return AGENT_MODULE_SET.has(toDomain)
-  return AGENT_MODULE_SET.has(fromDomain) && AGENT_MODULE_SET.has(toDomain)
+  if (fromDomain === 'studio') return ISOLATED_DOMAIN_SET.has(toDomain)
+  return ISOLATED_DOMAIN_SET.has(fromDomain) && ISOLATED_DOMAIN_SET.has(toDomain)
 }
 
 function targetDependencyFailures(fromFile, toFile) {
@@ -193,7 +198,7 @@ function targetDependencyFailures(fromFile, toFile) {
     return failures
   }
 
-  if (AGENT_MODULE_SET.has(from.domain) && to.domain === 'studio') {
+  if (ISOLATED_DOMAIN_SET.has(from.domain) && to.domain === 'studio') {
     const allowedEntryPoints = from.layer === 'routes'
       ? STUDIO_ROUTE_ENTRY_POINTS
       : STUDIO_AGENT_ENTRY_POINTS

@@ -1,9 +1,11 @@
 # Server Module Boundaries
 
 This document is the architecture contract for `packages/server/src`. It
-separates Studio-owned capabilities from the three agent families while
-preserving request/response semantics and persisted data. Studio-owned HTTP
-operations use `/api/studio/*`; Hermes-owned operations use `/api/hermes/*`.
+separates Studio-owned capabilities from the Research Workbench domain and the
+three agent families while preserving request/response semantics and persisted
+data. Studio-owned HTTP operations use `/api/studio/*`; Research Workbench
+operations use `/api/studio/research/*`; Hermes-owned operations use
+`/api/hermes/*`.
 Old server source trees are not retained. The only old Studio URL aliases are
 the centralized compatibility mappings for already-released App and MCU firmware versions in
 `modules/studio/middleware/legacy-app-api.ts`.
@@ -188,6 +190,14 @@ packages/server/src/
         global-agent.ts
         pets.ts
 
+    research/                      # Research Workbench-owned API and behavior
+      index.ts                     # aggregates the five subdomain routers into researchRoutes
+      workflows/                   # deterministic research workflow templates, runs, checkpoint resume, artifact anchors
+      library/                     # paper library: PDF intake, metadata, pdf2zh translation jobs
+      rag/                         # paper-qa bridge: library management, indexing, cited Q&A
+      latex/                       # LaTeX compile service (tectonic/latexmk), syntax validation, templates
+      artifacts/                   # artifact registry: versions, preview types, chat references
+
     hermes/                        # Hermes Agent-owned API and behavior
       index.ts                     # exposes factory/registration to bootstrap
       public/                      # Hermes adapter exposed only to bootstrap
@@ -331,6 +341,7 @@ registry. Studio orchestration never imports a concrete agent module.
 | Single Chat (Chat Run), Workflow, Group Chat, Global Agent | Studio | Cross-agent run and orchestration surfaces; dispatch through agent contracts. |
 | Pets/Petdex and aggregate logs | Studio | Stored or presented as Studio product state. |
 | Common config, credentials, provider contracts, voice, run/session/usage helpers | Studio | Shared capabilities exposed through `studio/public` or `studio/contracts`. |
+| Research Workbench: deterministic research workflows, paper library and translation, RAG bridge, LaTeX compilation, artifact registry | Research | Workbench product domain over its own SQLite tables and Python sidecars; consumes Studio capabilities through contracts/public facades, never agent internals. |
 | Studio SQLite tables and repositories | Studio | Application state owned by the Web UI. |
 | Hermes profiles, bridge, gateway, skills, plugins, memory, terminal, cron | Hermes | Direct Hermes Agent behavior or state. |
 | Journey | Hermes | Invokes Hermes and reads a Hermes profile. |
@@ -352,13 +363,14 @@ still exposed through a Hermes adapter, but Studio owns the chat-run lifecycle.
 
 An arrow means the row may import the column.
 
-| From / To | Studio | Hermes | Ekko | Coding Agents |
-| --- | ---: | ---: | ---: | ---: |
-| `bootstrap` | yes | yes | yes | yes |
-| Studio | yes | no | no | no |
-| Hermes | contracts/public | yes | no | no |
-| Ekko | contracts/public | no | yes | no |
-| Coding Agents | contracts/public | no | no | yes |
+| From / To | Studio | Research | Hermes | Ekko | Coding Agents |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `bootstrap` | yes | yes | yes | yes | yes |
+| Studio | yes | no | no | no | no |
+| Research | contracts/public | yes | no | no | no |
+| Hermes | contracts/public | no | yes | no | no |
+| Ekko | contracts/public | no | no | yes | no |
+| Coding Agents | contracts/public | no | no | no | yes |
 
 Additional layer rules:
 
@@ -369,6 +381,10 @@ Additional layer rules:
 - Services do not import routes, controllers, or sockets.
 - Agent modules do not import one another. Cross-agent execution goes through
   a Studio-owned port registered by `bootstrap`.
+- The Research Workbench follows the same isolation rules as agent modules:
+  its routes may use Studio contracts/public plus middleware/http, its other
+  layers only contracts/public, and it never imports an agent module. Studio
+  reaches research behavior only through a bootstrap-registered port.
 - Agent code does not reach into Studio internal `services`, `repositories`, or
   `infrastructure`; Studio exposes a narrow facade under `public`.
 - Studio never imports a concrete agent. This keeps the module graph acyclic.
@@ -399,7 +415,7 @@ npm run harness:check
 
 The unified harness invokes `scripts/server-module-boundaries.mjs`, which enforces:
 
-- only the four declared module roots under `modules/`;
+- only the five declared module roots under `modules/`;
 - no server TypeScript outside `modules/`, `bootstrap/`, and the package
   entrypoint `index.ts`;
 - the dependency matrix and route/controller/service layer rules;
