@@ -34,3 +34,11 @@ export interface WorkflowAgentNodeData {
 }
 
 export type WorkflowAgentNodeEditableData = Pick<WorkflowAgentNodeData, 'title' | 'agent' | 'agentMode' | 'provider' | 'model' | 'apiMode' | 'reasoningEffort' | 'input' | 'skills' | 'images' | 'approvalRequired' | 'orchestration'>
+
+export interface WorkflowDeterministicNodeData {
+  title: string
+  status: WorkflowNodeStatus
+  statusError?: string | null
+  readonly?: boolean
+  [key: string]: unknown
+}

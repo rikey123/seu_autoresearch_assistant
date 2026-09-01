@@ -1326,6 +1326,13 @@ export default {
       promptPlaceholder: '描述這個 Agent 要做什麼...',
       skillsPlaceholder: '技能，按 Enter 新增',
       uploadImages: '上傳圖片',
+      readonlyBadge: '唯讀',
+    },
+    nodeType: {
+      script: '腳本',
+      validate: '驗證',
+      render: '渲染',
+      unknown: '未知類型',
     },
     status: {
       idle: '空閒',
