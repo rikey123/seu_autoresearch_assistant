@@ -25,6 +25,9 @@ const appStore = useAppStore();
 const selectedKey = computed(() => {
   return route.name as string;
 });
+const isResearchActive = computed(
+  () => typeof route.name === "string" && route.name.startsWith("research."),
+);
 const isSuperAdmin = computed(() => isStoredSuperAdmin());
 const currentUsername = computed(() => getStoredUsername());
 const isVersionPreview = import.meta.env.VITE_HERMES_PREVIEW === "1";
@@ -103,6 +106,29 @@ function handleUpdateClick() {
     @click="handleSidebarClick"
   >
     <nav class="sidebar-nav">
+      <RouteLinkItem
+        class="nav-item"
+        :to="{ name: 'research.workflows' }"
+        :active="isResearchActive"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M10 2v6.3L4.6 17.6A2 2 0 0 0 6.4 21h11.2a2 2 0 0 0 1.8-3.4L14 8.3V2"
+          />
+          <line x1="8.5" y1="2" x2="15.5" y2="2" />
+          <line x1="7.5" y1="14.5" x2="16.5" y2="14.5" />
+        </svg>
+        <span>{{ t("sidebar.research") }}</span>
+      </RouteLinkItem>
       <RouteLinkItem
         class="nav-item"
         :to="{ name: 'hermes.logs' }"

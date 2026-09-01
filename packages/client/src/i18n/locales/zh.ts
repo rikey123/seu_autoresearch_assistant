@@ -324,6 +324,7 @@ export default {
 
   sidebar: {
     chat: '对话',
+    research: '科研工作台',
     backToChat: '返回',
     search: '搜索',
     apiRelay: '饲料',
@@ -389,6 +390,34 @@ export default {
     dockerUpdateTitle: 'Docker 升级',
     dockerUpdateGuide: '当前运行在 Docker 环境中，请拉取最新镜像并重建容器来升级：',
     dockerUpdateNote: '数据会持续保留，重建容器不会丢失数据。',
+  },
+
+  research: {
+    workbench: '科研工作台',
+    placeholderTitle: '模块建设中',
+    placeholderText: '该模块是科研工作台的骨架页面，功能将在后续版本中逐步上线。',
+    sections: {
+      workflows: {
+        title: '工作流',
+        subtitle: '设计、编排并运行自动化科研流程。',
+      },
+      papers: {
+        title: '文献',
+        subtitle: '检索、组织与标注科研文献。',
+      },
+      latex: {
+        title: 'LaTeX',
+        subtitle: '撰写、预览并编译 LaTeX 论文。',
+      },
+      knowledge: {
+        title: '知识库',
+        subtitle: '构建并检索个人科研知识库。',
+      },
+      artifacts: {
+        title: '研究成果',
+        subtitle: '浏览图表、数据集等科研产出物。',
+      },
+    },
   },
 
   agentManager: {

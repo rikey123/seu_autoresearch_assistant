@@ -224,6 +224,35 @@ const router = createRouter({
       meta: { ekkoConfig: true, requiresSuperAdmin: true },
     },
     {
+      path: '/research',
+      redirect: { name: 'research.workflows' },
+    },
+    {
+      path: '/research/workflows',
+      name: 'research.workflows',
+      component: () => import('@/views/research/ResearchWorkflowsView.vue'),
+    },
+    {
+      path: '/research/papers',
+      name: 'research.papers',
+      component: () => import('@/views/research/ResearchPapersView.vue'),
+    },
+    {
+      path: '/research/latex',
+      name: 'research.latex',
+      component: () => import('@/views/research/ResearchLatexView.vue'),
+    },
+    {
+      path: '/research/knowledge',
+      name: 'research.knowledge',
+      component: () => import('@/views/research/ResearchKnowledgeView.vue'),
+    },
+    {
+      path: '/research/artifacts',
+      name: 'research.artifacts',
+      component: () => import('@/views/research/ResearchArtifactsView.vue'),
+    },
+    {
       path: '/hermes/agents',
       redirect: { name: 'hermes.agentManager' },
     },
