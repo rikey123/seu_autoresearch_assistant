@@ -52,3 +52,5 @@ CLAUDE.md
 # Client source map artifacts
 packages/client/src/**/*.js
 .hermes/
+# git worktrees for parallel coding-agent workorders
+.worktrees/

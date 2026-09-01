@@ -31,16 +31,16 @@
 
 | # | 任务 | 分支 | 验收 | 状态 |
 | --- | --- | --- | --- | --- |
-| T1.1 | research 服务模块骨架（五子域+路由注册+boundary 文档+checker 绿） | feature/p1-T1-server-skeleton | `node scripts/server-module-boundaries.mjs` 通过；新路由 200 | ✅ 施工完成（3b7ae81），审查点 A 复核中 |
-| T1.2 | 前端科研工作台导航+五视图空页+i18n | feature/p1-T2-client-shell | 页面可达，中英文案齐全 | ✅ 施工完成（4156bfc），审查点 A 复核中 |
-| T1.3 | artifacts 产物注册表（表+API+预览路由） | feature/p1-T3-artifacts | 建表迁移+API 测试过 | 待审查点 A 通过后启动（W3） |
-| **审查A** | 审查员：边界+风格 | — | 出审查报告 | 进行中 |
+| T1.1 | research 服务模块骨架（五子域+路由注册+boundary 文档+checker 绿） | feature/p1-T1-server-skeleton | `node scripts/server-module-boundaries.mjs` 通过；新路由 200 | ✅ 已合入 main（3b7ae81 → merge e5dd205，审查点 A 通过） |
+| T1.2 | 前端科研工作台导航+五视图空页+i18n | feature/p1-T2-client-shell | 页面可达，中英文案齐全 | ✅ 已合入 main（4156bfc → merge 7c88f26，审查点 A 通过） |
+| T1.3 | artifacts 产物注册表（表+API+预览路由） | feature/p1-T3-artifacts | 建表迁移+API 测试过 | 🚀 施工中（W3，与 T2.0 并行） |
+| **审查A** | 审查员：边界+风格 | — | 出审查报告 | ✅ 通过（T1/T2 均 approve，2026-09-01） |
 
 ## P2 确定性工作流（W4-W7，方案 C：复用基座引擎 + 节点扩展）
 
 | # | 任务 | 分支 | 验收 |
 | --- | --- | --- | --- |
-| T2.0 | 接缝 spike：验证基座引擎扩展点（run-store 容纳非 agent 确定性节点 / rerun 快照行为 / 画布未知节点兜底），产出接缝评估结论，决定主方案（扩展节点）或降级方案（自建执行器+复用基座存储契约） | feature/p2-T0-spike | spike 报告 + 结论入库 docs/research-workbench/ |
+| T2.0 | 接缝 spike：验证基座引擎扩展点（run-store 容纳非 agent 确定性节点 / rerun 快照行为 / 画布未知节点兜底），产出接缝评估结论，决定主方案（扩展节点）或降级方案（自建执行器+复用基座存储契约） | feature/p2-T0-spike | spike 报告 + 结论入库 docs/research-workbench/（🚀 施工中，与 W3 并行） |
 | T2.1 | 节点类型扩展 script/validate/render（llm/gate 复用基座既有能力）+ 输入输出 schema 校验 + 基座改动登记表 | feature/p2-T1-engine | 单测覆盖 5 种节点类型；改动集中登记、upstream 可同步 |
 | T2.2 | 模板 literature-review + paper-translate（翻译走 API） | feature/p2-T2-templates | 端到端跑通一次（可 mock LLM） |
 | T2.3 | 画布适配科研节点（前端，含未知节点兜底） | feature/p2-T3-canvas | 新节点可拖拽配置 |
@@ -75,7 +75,7 @@
 
 ## 并行策略
 
-- 审查点 A 通过后：W3（T1.3 artifacts）与 P2 T2.0 spike 双线并行；spike 结论出来后 W4-W5 再开工
+- **已启动**：W3（T1.3 artifacts）与 T2.0 spike 双线并行；spike 结论出来后 W4-W5 再开工
 - 模型策略全局 API-first：LLM/embedding/翻译走 API 服务商（复用 Studio provider 配置），不下载本地模型权重；确需下载时 HF_ENDPOINT=hf-mirror.com + HF_HUB_DISABLE_XET=1（已验证可用）
-- git worktree 隔离各工单工作区，避免 Claude Code 实例互踩
+- git worktree 隔离各工单工作区（本仓库放 `.worktrees/`，已 gitignore），避免 Claude Code 实例互踩；worktree 内 node_modules 用 NTFS junction 复用主副本
 - sidecar 类任务（T3.2、T4.1）涉及 Python 环境，先做环境验证 spike 再进主干

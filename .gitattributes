@@ -1,0 +1,24 @@
+# Normalize line endings: LF in both the repository and the working tree.
+# Rationale: vite-node/esbuild fail to transform CRLF files that carry a shebang,
+# which broke local vitest collection for scripts/server-module-boundaries.mjs.
+* text=auto eol=lf
+
+# Windows-only scripts would need CRLF if any are ever added:
+# *.bat text eol=crlf
+# *.cmd text eol=crlf
+# *.ps1 text eol=crlf
+
+# Binary assets — never normalize.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.wasm binary

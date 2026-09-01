@@ -33,7 +33,7 @@
 | 模块边界契约 | `docs/harness/server-module-boundaries.md` | 新模块必须遵守：`routes→controllers→services`，Studio 域用 `/api/studio/*` |
 
 **工程约束**：
-- Node ≥ 23（package.json engines）；本机 Node 22 —— 需安装 Node 23（nvm-windows 或直接升级），否则部分依赖类型/运行时不保真。
+- Node ≥ 23（package.json engines）；本机 Node 22 —— **以本机 v22 实测为准：构建与冒烟已两轮全绿**（P0 基线 + P1 集成分支），Node 23 升级遗留为待办（nvm-windows），不阻塞施工。
 - 前端 Vue 3 `<script setup>` + Naive UI + Pinia + i18n（中英都要落）。
 - 服务器 Koa + Socket.IO + SQLite，状态目录 `~/.hermes-web-ui`（可用环境变量改）。
 - 新增服务端顶层模块需同步改 boundary 文档和 checker（`scripts/server-module-boundaries.mjs`）。
@@ -191,13 +191,13 @@
 - T0.2 仓库治理：CLAUDE.md/AGENTS.md 补充项目约定、`.gitignore` 校准、README 项目化改写、第一次 push origin main
 
 ### P1 骨架（feature/p1-*）
-- T1.1 research 服务模块骨架 ✅（`feature/p1-T1-server-skeleton`，待审查点 A 结论）
-- T1.2 前端「科研工作台」导航区 + 路由 + 空页面（五视图）+ i18n ✅（`feature/p1-T2-client-shell`，待审查点 A 结论）
-- T1.3 产物注册表 artifacts：表、API、预览路由（复用基座 preview）→ **W3，审查通过后与 P2 并行**
-- **审查点 A**（审查员）：模块边界 + 代码风格 ← 当前进行中
+- T1.1 research 服务模块骨架 ✅ 已合入 main（`feature/p1-T1-server-skeleton`，审查点 A 通过）
+- T1.2 前端「科研工作台」导航区 + 路由 + 空页面（五视图）+ i18n ✅ 已合入 main（`feature/p1-T2-client-shell`，审查点 A 通过）
+- T1.3 产物注册表 artifacts：表、API、预览路由（复用基座 preview）→ **W3 已派发，与 P2 T2.0 spike 并行**
+- **审查点 A**（审查员）：模块边界 + 代码风格 ✅ 通过（两分支均 approve）
 
 ### P2 确定性工作流（feature/p2-*，方案 C：复用基座引擎）
-- T2.0 **接缝 spike（先行，0.5–1 天）**：基座引擎扩展点验证（run-store 容纳非 agent 确定性节点 / rerun 快照 / 画布兜底），产出接缝评估结论；决定主方案或降级方案
+- T2.0 **接缝 spike（先行，0.5–1 天）**：基座引擎扩展点验证（run-store 容纳非 agent 确定性节点 / rerun 快照 / 画布兜底），产出接缝评估结论；决定主方案或降级方案 → **已派发，与 W3 并行**
 - T2.1 节点类型扩展：`script/validate/render`（`llm`/`gate` 复用基座既有能力）+ 输入输出 schema 校验 + 《基座改动登记表》更新
 - T2.2 模板：literature-review + paper-translate（首个端到端可跑，翻译走 API）
 - T2.3 工作流画布适配科研节点类型（前端，含未知节点兜底）
@@ -230,13 +230,14 @@
 - 每个 P 阶段合入前：`codex exec` 大阶段评审（架构/安全/可维护性），意见回炉
 - 提交规范：`feat(research): ...` / `fix(research): ...`；每任务一 PR，rebase main
 - 基线保护：upstream 同步分支 `upstream/main` 定期 rebase 检查冲突面
+- 仓库地址：origin=`git@github.com:rikey123/seu_autoresearch_assistant.git`（SSH；upstream=EKKOLearnAI/hermes-studio 保留同步）
 - **基座改动登记表**（v0.2 新增）：凡修改基座原有文件（如 workflow manager、routes 注册、i18n index），逐条登记文件/改动点/原因，随 PR 提交，保证 upstream 可同步
 
 ## 10. 风险与对策
 
 | 风险 | 对策 |
 | --- | --- |
-| Node 22 vs 要求 ≥23 | P0 先装 Node 23（nvm-windows）；CI 里同样锁 23 |
+| Node 22 vs 要求 ≥23 | 以本机 v22 实测构建/冒烟通过为准（两轮全绿）；Node 23 升级遗留为待办（nvm-windows），不阻塞施工 |
 | pdf2zh/paper-qa 是 Python 生态，与 TS 服务端混布 | Python sidecar（独立 venv + HTTP/子进程），失败可降级（翻译/RAG 功能标记不可用，不阻塞主程序）；模型全部走 API，不下载本地权重 |
 | **GFW（网络封锁，非「模型」）**：huggingface.co/google 等在本机不可达 | **已决策 API-first**——LLM/embedding/翻译走 API 服务商，规避本地模型下载这一步；确需下载时 HF_ENDPOINT=hf-mirror.com + HF_HUB_DISABLE_XET=1（已验证） |
 | 基座引擎扩展接缝不确定（run-store/画布对非 agent 节点的兼容性） | T2.0 spike 先行验证；降级方案已定：自建确定性执行器但复用基座存储契约与画布展示 |
