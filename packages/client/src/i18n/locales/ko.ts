@@ -2642,7 +2642,7 @@ export default {
     canvasAriaLabel: '워크플로 캔버스',
     workspace: { title: '작업 공간 선택', select: '작업 공간 선택', clear: '작업 공간 지우기' },
     actions: {
-      newWorkflow: '새 워크플로', addNode: '노드 추가', createWorkflowFirst: '먼저 워크플로를 만들어 주세요', reset: '초기화',
+      newWorkflow: '새 워크플로', addNode: '노드 추가', addNodeResearch: '리서치 노드 추가', createWorkflowFirst: '먼저 워크플로를 만들어 주세요', reset: '초기화',
       startExecution: '실행 시작', executionPending: '워크플로 실행이 아직 연결되지 않았습니다', executionStarted: '워크플로 실행을 시작했습니다', executionCompleted: '워크플로 실행이 완료되었습니다', executionFailed: '워크플로 실행에 실패했습니다',
       rerunDownstreamKeepNode: '이 노드를 유지하고 하위 노드 실행', rerunDownstreamClearNode: '이 노드를 지우고 하위 노드 실행', rerunDownstreamStarted: '하위 노드 재실행을 시작했습니다', rerunFromNodeStarted: '이 노드부터 재실행을 시작했습니다', rerunFailed: '워크플로 재실행에 실패했습니다',
       deleteNode: '노드 삭제', deleteEdge: '연결 삭제', editEdge: '연결 편집', undo: '실행 취소',
@@ -2801,6 +2801,12 @@ export default {
       validate: '검증',
       render: '렌더링',
       unknown: '알 수 없는 유형',
+    },
+    deterministic: {
+      code: '코드',
+      codePlaceholder: '이 노드가 실행될 때 Node.js에서 실행되는 JavaScript 코드',
+      inputPlaceholder: '스크립트에 전달할 선택적 입력(비워 두어도 됨)',
+      configPending: '이 노드 유형의 설정은 이후 버전에서 제공될 예정입니다.',
     },
     status: {
       idle: '대기', queued: '대기열', running: '실행 중', pending_approval: '승인 대기', completed: '완료', skipped: '건너뜀', failed: '실패', approval_rejected: '승인 거부', canceled: '취소됨',

@@ -1176,6 +1176,7 @@ export default {
     actions: {
       newWorkflow: 'New Workflow',
       addNode: 'Add Node',
+      addNodeResearch: 'Add research node',
       createWorkflowFirst: 'Please create a workflow first',
       reset: 'Reset',
       startExecution: 'Start Execution',
@@ -1349,6 +1350,12 @@ export default {
       validate: 'Validate',
       render: 'Render',
       unknown: 'Unknown type',
+    },
+    deterministic: {
+      code: 'Code',
+      codePlaceholder: 'JavaScript code executed by Node.js when this node runs',
+      inputPlaceholder: 'Optional input passed to the script (can stay empty)',
+      configPending: 'Configuration for this node type will be available in a future version.',
     },
     status: {
       idle: 'Idle',

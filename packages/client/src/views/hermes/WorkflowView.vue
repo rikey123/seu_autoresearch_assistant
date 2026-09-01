@@ -22,10 +22,15 @@ import {
   workflowRunEdgeCanvasLabel,
 } from '@/utils/workflow-run-snapshot'
 import {
+  createDeterministicWorkflowNodeData,
+  isDeterministicWorkflowNodeType,
+  isKnownWorkflowNodeType,
   normalizeDeterministicWorkflowNodeData,
   normalizeWorkflowNodeFrame,
   normalizeWorkflowNodeType,
   serializeDeterministicWorkflowNode,
+  WORKFLOW_DETERMINISTIC_NODE_TYPES,
+  type WorkflowDeterministicNodeType,
 } from '@/utils/workflow-node-type'
 import {
   inferWorkflowConditionValueType,
@@ -54,7 +59,7 @@ import {
   SCHEDULE_MONTH_DAY_OPTIONS,
   type ScheduleFrequency,
 } from '@/utils/schedule-frequency'
-import { createConnectedAgentTransaction, type CanvasTransaction } from '@/utils/workflow-canvas'
+import { createConnectedAgentTransaction, createConnectedDeterministicNodeTransaction, type CanvasTransaction } from '@/utils/workflow-canvas'
 import {
   createWorkflowAuthoringEdge,
   normalizeWorkflowHandleId,
@@ -123,6 +128,7 @@ import type {
   WorkflowAgentNodeData,
   WorkflowAgentNodeEditableData,
   WorkflowDeterministicNodeData,
+  WorkflowDeterministicNodeEditableData,
   WorkflowNodeStatus,
   WorkflowSelectOption,
 } from '@/components/hermes/workflow/types'
@@ -231,6 +237,7 @@ const contextMenuX = ref(0)
 const contextMenuY = ref(0)
 const contextMenuOpenedAt = ref(0)
 const contextMenuTarget = ref<{ type: 'node' | 'edge'; id: string } | null>(null)
+const deterministicDropMenu = ref<{ source: string; sourceHandle: string | null; position: { x: number; y: number }; x: number; y: number } | null>(null)
 const edgeEditorVisible = ref(false)
 const edgeEditorId = ref('')
 const previewedWorkflowEdgeId = ref<string | null>(null)
@@ -711,6 +718,25 @@ function makeInitialNodes(): WorkflowNode[] {
   return []
 }
 
+function makeDeterministicNode(
+  type: WorkflowDeterministicNodeType,
+  id: string,
+  title: string,
+  position: { x: number; y: number },
+): WorkflowNode {
+  return {
+    id,
+    type,
+    position,
+    dragHandle: '.node-header',
+    style: { width: `${WORKFLOW_NODE_DEFAULT_WIDTH}px`, height: `${WORKFLOW_NODE_DEFAULT_HEIGHT}px` },
+    data: {
+      ...createDeterministicWorkflowNodeData(type, title),
+      onUpdate: updateDeterministicNodeData,
+    } as WorkflowDeterministicNodeData,
+  }
+}
+
 const nodes = ref<WorkflowNode[]>(makeInitialNodes())
 const edges = ref<WorkflowEdge[]>([])
 
@@ -1189,7 +1215,10 @@ function normalizeStoredNode(raw: unknown, index: number): WorkflowNode {
         width: frame.storedWidth || WORKFLOW_NODE_FALLBACK_STYLE.width,
         height: frame.storedHeight || WORKFLOW_NODE_FALLBACK_STYLE.height,
       },
-      data: normalizeDeterministicWorkflowNodeData(data, title) as WorkflowDeterministicNodeData,
+      data: {
+        ...normalizeDeterministicWorkflowNodeData(data, title),
+        onUpdate: updateDeterministicNodeData,
+      } as WorkflowDeterministicNodeData,
     }
   }
   const node = makeNode(
@@ -1227,7 +1256,7 @@ function normalizeStoredEdge(raw: unknown): WorkflowEdge | null {
 
 function nextIndexFromNodes(source: WorkflowNode[]): number {
   const max = source.reduce((result, node) => {
-    const match = node.id.match(/^agent-(\d+)$/)
+    const match = node.id.match(/^(?:agent|script|validate|render)-(\d+)$/)
     return match ? Math.max(result, Number(match[1])) : result
   }, 0)
   return Math.max(max + 1, source.length + 1, 1)
@@ -2856,6 +2885,14 @@ function updateNodeData(id: string, patch: Partial<WorkflowAgentNodeEditableData
   if (typeof patch.agent === 'string') void ensureSkillOptionsForAgent(patch.agent)
 }
 
+function updateDeterministicNodeData(id: string, patch: Partial<WorkflowDeterministicNodeEditableData>) {
+  if (selectedWorkflowRunId.value) return
+  nodes.value = nodes.value.map<WorkflowNode>((node) => {
+    if (isWorkflowAgentNode(node) || node.id !== id) return node
+    return { ...node, data: { ...node.data, ...patch } }
+  })
+}
+
 function expandNodeHeightForImages(style: WorkflowNode['style'], imageCount: number): WorkflowNode['style'] {
   if (imageCount <= 0) return style
   const currentHeight = Number.parseFloat(style.height || String(WORKFLOW_NODE_DEFAULT_HEIGHT))
@@ -2892,6 +2929,17 @@ async function handleConnectEnd(event?: MouseEvent | TouchEvent) {
   const touch = 'changedTouches' in event ? event.changedTouches[0] : null
   const clientX = touch?.clientX ?? ('clientX' in event ? event.clientX : 0)
   const clientY = touch?.clientY ?? ('clientY' in event ? event.clientY : 0)
+  const sourceNode = nodes.value.find(node => node.id === start.nodeId)
+  if (sourceNode && !isWorkflowAgentNode(sourceNode)) {
+    deterministicDropMenu.value = {
+      source: start.nodeId,
+      sourceHandle: normalizeWorkflowHandleId(start.handleId, 'source'),
+      position: screenToFlowCoordinate({ x: clientX, y: clientY }),
+      x: clientX,
+      y: clientY,
+    }
+    return
+  }
   const nodeId = `agent-${nextNodeIndex.value}`
   const position = screenToFlowCoordinate({ x: clientX, y: clientY })
   const node = makeNode(nodeId, t('workflow.newNodeTitle', { count: nextNodeIndex.value }), position)
@@ -2917,6 +2965,46 @@ async function handleConnectEnd(event?: MouseEvent | TouchEvent) {
   lastCanvasTransaction.value = transaction
   nextNodeIndex.value += 1
   ensureSkillOptionsForVisibleNodes()
+}
+
+async function handleDeterministicDropSelect(type: string | number) {
+  const drop = deterministicDropMenu.value
+  deterministicDropMenu.value = null
+  if (!drop || selectedWorkflowRunId.value) return
+  if (!isKnownWorkflowNodeType(type)) return
+  const nodeId = `${type}-${nextNodeIndex.value}`
+  const node = type === 'agent'
+    ? makeNode(nodeId, t('workflow.newNodeTitle', { count: nextNodeIndex.value }), drop.position)
+    : makeDeterministicNode(type, nodeId, t('workflow.newNodeTitle', { count: nextNodeIndex.value }), drop.position)
+  const transaction = type === 'agent'
+    ? createConnectedAgentTransaction<WorkflowNode, WorkflowEdge>(
+        { nodes: nodes.value, edges: edges.value },
+        { source: drop.source, sourceHandle: drop.sourceHandle, nodeId, title: node.data.title, position: drop.position, nodeData: node.data },
+      )
+    : createConnectedDeterministicNodeTransaction<WorkflowNode, WorkflowEdge>(
+        { nodes: nodes.value, edges: edges.value },
+        { source: drop.source, sourceHandle: drop.sourceHandle, nodeId, nodeType: type, position: drop.position, nodeData: node.data },
+      )
+  transaction.after.edges[transaction.after.edges.length - 1] = {
+    ...transaction.after.edges[transaction.after.edges.length - 1], animated: false, markerEnd: MarkerType.ArrowClosed,
+  }
+  setNodes(transaction.after.nodes)
+  await nextTick()
+  updateNodeInternals([nodeId])
+  setEdges(transaction.after.edges)
+  await nextTick()
+  window.setTimeout(() => {
+    removeSelectedElements()
+    const createdNode = findNode(nodeId)
+    if (createdNode) addSelectedNodes([createdNode])
+  }, 0)
+  lastCanvasTransaction.value = transaction
+  nextNodeIndex.value += 1
+  ensureSkillOptionsForVisibleNodes()
+}
+
+function closeDeterministicDropMenu() {
+  deterministicDropMenu.value = null
 }
 
 function undoLastCanvasTransaction() {
@@ -3191,6 +3279,32 @@ async function addAgentNode() {
   ]
   nextNodeIndex.value += 1
   ensureSkillOptionsForVisibleNodes()
+  await nextTick()
+}
+
+const deterministicNodeOptions = computed<DropdownOption[]>(() => WORKFLOW_DETERMINISTIC_NODE_TYPES.map(type => ({
+  key: type,
+  label: t(`workflow.nodeType.${type}`),
+})))
+
+const deterministicDropOptions = computed<DropdownOption[]>(() => [
+  { key: 'agent', label: t('workflow.node.agent') },
+  ...WORKFLOW_DETERMINISTIC_NODE_TYPES.map(type => ({ key: type, label: t(`workflow.nodeType.${type}`) })),
+])
+
+async function addDeterministicNode(type: string | number) {
+  if (selectedWorkflowRunId.value) return
+  if (!isDeterministicWorkflowNodeType(type)) return
+  if (!activeWorkflowId.value) {
+    message.warning(t('workflow.actions.createWorkflowFirst'))
+    return
+  }
+  const id = `${type}-${nextNodeIndex.value}`
+  nodes.value = [
+    ...nodes.value,
+    makeDeterministicNode(type, id, t('workflow.newNodeTitle', { count: nextNodeIndex.value }), getNextVisibleNodePosition()),
+  ]
+  nextNodeIndex.value += 1
   await nextTick()
 }
 
@@ -3472,6 +3586,17 @@ function nodeColor(node: { data: WorkflowAgentNodeData }) {
             </template>
             {{ t('workflow.actions.addNode') }}
           </NTooltip>
+          <NDropdown v-if="!selectedWorkflowRunId" trigger="click" :options="deterministicNodeOptions" @select="addDeterministicNode">
+            <NButton quaternary size="small" circle :aria-label="t('workflow.actions.addNodeResearch')" :title="t('workflow.actions.addNodeResearch')">
+              <template #icon>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <rect x="15" y="15" width="6" height="6" rx="1" fill="currentColor" stroke="none" />
+                </svg>
+              </template>
+            </NButton>
+          </NDropdown>
           <NTooltip v-if="!selectedWorkflowRunId" trigger="hover">
             <template #trigger>
               <NButton
@@ -3830,6 +3955,16 @@ function nodeColor(node: { data: WorkflowAgentNodeData }) {
           :show="contextMenuVisible"
           @select="handleContextMenuSelect"
           @clickoutside="handleContextMenuClickOutside"
+        />
+        <NDropdown
+          placement="bottom-start"
+          trigger="manual"
+          :x="deterministicDropMenu?.x || 0"
+          :y="deterministicDropMenu?.y || 0"
+          :options="deterministicDropOptions"
+          :show="deterministicDropMenu !== null"
+          @select="handleDeterministicDropSelect"
+          @clickoutside="closeDeterministicDropMenu"
         />
       </section>
       <aside

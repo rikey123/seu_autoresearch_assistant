@@ -1175,6 +1175,7 @@ export default {
     actions: {
       newWorkflow: '新建工作流',
       addNode: '添加节点',
+      addNodeResearch: '添加科研节点',
       createWorkflowFirst: '请先创建工作流',
       reset: '重置',
       startExecution: '开始执行',
@@ -1394,6 +1395,12 @@ export default {
       validate: '校验',
       render: '渲染',
       unknown: '未知类型',
+    },
+    deterministic: {
+      code: '代码',
+      codePlaceholder: '本节点执行时由 Node.js 运行的 JavaScript 代码',
+      inputPlaceholder: '传给脚本的可选输入（可留空）',
+      configPending: '该节点类型的配置将在后续版本提供。',
     },
     status: {
       idle: '空闲',
