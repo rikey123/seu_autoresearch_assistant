@@ -42,10 +42,10 @@
 | --- | --- | --- | --- |
 | T2.0 | 接缝 spike：验证基座引擎扩展点（run-store 容纳非 agent 确定性节点 / rerun 快照行为 / 画布未知节点兜底），产出接缝评估结论，决定主方案（扩展节点）或降级方案（自建执行器+复用基座存储契约） | feature/p2-T0-spike | spike 报告入库 T2.0-spike-report.md；结论=方案 C 可行、不降级 | ✅ 已合入 main（0044b73 → merge 0c5fd09，审查点 B 通过 + 真实链路 JWT 冒烟四步全过） |
 | T2.1a | 画布节点 type 透传 + 只读防护（先行封堵静默改写；基座改动 BC-1） | feature/p2-T1a-client-guard | agent 分支零变化；未知类型往返无损；11 locale 齐全 | ✅ 已合入 main（b902ae0 → merge 4f80927，pm 验收通过） |
-| T2.1b | run-store `output_json` 存储列（确定性输出落库；基座改动 BC-2） | feature/p2-T1b-output-column | 迁移+读写单测绿；既有测试零回归 | 🚀 施工中 |
-| T2.1c | 引擎分发：normalize 类型分支 + 确定性执行器（DI 注入）+ 输出捕获/rerun 恢复切换（基座改动 BC-3） | feature/p2-T1c-engine-dispatch | 单测覆盖 5 种节点类型；改动集中登记、upstream 可同步 | 待开工 |
+| T2.1b | run-store `output_json` 存储列（确定性输出落库；基座改动 BC-2） | feature/p2-T1b-output-column | 迁移+读写单测绿；既有测试零回归 | ✅ 已合入 main（4cadcdd → merge a196c85，pm 验收通过） |
+| T2.1c | 引擎分发：normalize 类型分支 + 确定性执行器（DI 注入）+ 输出捕获/rerun 恢复切换（基座改动 BC-3） | feature/p2-T1c-engine-dispatch | 单测覆盖 5 种节点类型；改动集中登记、upstream 可同步 | ✅ 已合入 main（0a59987 → merge 55fdba1，pm 验收通过：新增 9 用例 + 全量回归 211 绿 + build） |
 | T2.2 | 模板 literature-review + paper-translate（翻译走 API） | feature/p2-T2-templates | 端到端跑通一次（可 mock LLM） |
-| T2.3 | 画布适配科研节点（前端，含未知节点兜底） | feature/p2-T3-canvas | 新节点可拖拽配置 |
+| T2.3 | 画布适配科研节点（前端，含未知节点兜底） | feature/p2-T3-canvas | 新节点可拖拽配置 | ✅ 已合入 main（d0fc4e5 → merge 8a323ce，pm 验收通过：46/46 实跑 + build） |
 | T2.4 | overnight-research 批处理模板 | feature/p2-T4-overnight | 队列+晨报 HTML 产物 |
 | **审查B** | 审查员单节点正确性 + **Codex 大阶段评审 1**（引擎集成设计） | — | — |
 
