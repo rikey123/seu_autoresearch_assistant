@@ -317,6 +317,7 @@ export const WORKFLOW_RUN_NODE_SESSIONS_SCHEMA: Record<string, string> = {
   created_at: 'INTEGER NOT NULL',
   updated_at: 'INTEGER NOT NULL',
   error: 'TEXT',
+  output_json: "TEXT NOT NULL DEFAULT ''",
 }
 
 export const WORKFLOW_RUN_NODE_SESSIONS_INDEXES = {
