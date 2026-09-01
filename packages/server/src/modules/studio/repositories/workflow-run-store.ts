@@ -62,6 +62,7 @@ export interface WorkflowRunNodeSessionRecord {
   created_at: number
   updated_at: number
   error: string | null
+  output_json: string
 }
 
 function profileName(value?: string | null): string {
@@ -122,6 +123,7 @@ function rowToNodeSessionRecord(row: Record<string, any>): WorkflowRunNodeSessio
     created_at: Number(row.created_at || 0),
     updated_at: Number(row.updated_at || 0),
     error: row.error == null || row.error === '' ? null : String(row.error),
+    output_json: String(row.output_json || ''),
   }
 }
 
@@ -481,6 +483,7 @@ export function createWorkflowRunNodeSession(input: {
     created_at: now,
     updated_at: now,
     error: input.error || null,
+    output_json: '',
   }
   const db = getDb()
   if (!db) {
@@ -490,8 +493,8 @@ export function createWorkflowRunNodeSession(input: {
   db.prepare(`
     INSERT INTO ${WORKFLOW_RUN_NODE_SESSIONS_TABLE} (
       id, run_id, workflow_id, node_id, execution_id, iteration_path_json, consumed_edge_evaluation_ids_json, session_id, profile, agent, agent_mode,
-      status, sequence, remaining_timeout_ms_at_start, started_at, finished_at, created_at, updated_at, error
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      status, sequence, remaining_timeout_ms_at_start, started_at, finished_at, created_at, updated_at, error, output_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     record.id,
     record.run_id,
@@ -512,6 +515,7 @@ export function createWorkflowRunNodeSession(input: {
     record.created_at,
     record.updated_at,
     record.error,
+    record.output_json,
   )
   return record
 }
@@ -521,6 +525,7 @@ export function updateWorkflowRunNodeSession(id: string, patch: {
   started_at?: number | null
   finished_at?: number | null
   error?: string | null
+  outputJson?: string
 }): WorkflowRunNodeSessionRecord | null {
   const existing = getWorkflowRunNodeSession(id)
   if (!existing) return null
@@ -533,6 +538,7 @@ export function updateWorkflowRunNodeSession(id: string, patch: {
     finished_at: patch.finished_at === undefined ? existing.finished_at : patch.finished_at,
     updated_at: Date.now(),
     error: patch.error === undefined ? existing.error : patch.error,
+    output_json: patch.outputJson === undefined ? existing.output_json : patch.outputJson,
   }
   const db = getDb()
   if (!db) {
@@ -541,9 +547,9 @@ export function updateWorkflowRunNodeSession(id: string, patch: {
   }
   db.prepare(`
     UPDATE ${WORKFLOW_RUN_NODE_SESSIONS_TABLE}
-    SET status = ?, started_at = ?, finished_at = ?, updated_at = ?, error = ?
+    SET status = ?, started_at = ?, finished_at = ?, updated_at = ?, error = ?, output_json = ?
     WHERE id = ?
-  `).run(next.status, next.started_at, next.finished_at, next.updated_at, next.error, id)
+  `).run(next.status, next.started_at, next.finished_at, next.updated_at, next.error, next.output_json, id)
   return next
 }
 
