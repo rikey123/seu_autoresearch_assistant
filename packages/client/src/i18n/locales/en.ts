@@ -324,6 +324,7 @@ export default {
   // Sidebar
   sidebar: {
     chat: 'Chat',
+    research: 'Research Workbench',
     backToChat: 'Back',
     search: 'Search',
     apiRelay: 'API Relay',
@@ -389,6 +390,35 @@ export default {
     dockerUpdateTitle: 'Docker Update',
     dockerUpdateGuide: 'In Docker environment, please pull the latest image and recreate the container to upgrade:',
     dockerUpdateNote: 'Your data will persist after the container is recreated.',
+  },
+
+  research: {
+    workbench: 'Research Workbench',
+    placeholderTitle: 'Module under construction',
+    placeholderText:
+      'This module is part of the research workbench shell. Its functionality will ship in an upcoming release.',
+    sections: {
+      workflows: {
+        title: 'Workflows',
+        subtitle: 'Design, orchestrate and run automated research pipelines.',
+      },
+      papers: {
+        title: 'Papers',
+        subtitle: 'Search, organize and annotate research literature.',
+      },
+      latex: {
+        title: 'LaTeX',
+        subtitle: 'Write, preview and compile LaTeX manuscripts.',
+      },
+      knowledge: {
+        title: 'Knowledge',
+        subtitle: 'Build and query your research knowledge base.',
+      },
+      artifacts: {
+        title: 'Artifacts',
+        subtitle: 'Browse figures, datasets and other research outputs.',
+      },
+    },
   },
 
   agentManager: {
