@@ -40,8 +40,10 @@ import {
   deleteWorkflowPrimaryAgentSession,
   isWorkflowRunCoordinatorAvailable,
   runWorkflowAndWait,
+  runWorkflowDeterministicNode,
   stopWorkflowAgentRun,
 } from '../../public/workflow-runtime'
+import { isDeterministicWorkflowNodeType, DETERMINISTIC_WORKFLOW_NODE_TYPES, type WorkflowDeterministicNodeType } from './deterministic-executor'
 import { logger } from '../../public/logging'
 import { assertAgentAvailable } from '../agent-availability'
 
@@ -109,22 +111,31 @@ export interface WorkflowNodeSnapshot {
   position?: { x: number; y: number }
   data: {
     title: string
-    agent: string
-    agentMode: 'scoped' | 'global'
-    provider: string
-    model: string
-    apiMode: string
-    reasoningEffort: string
     input: string
-    skills: string[]
-    images: string[]
-    approvalRequired: boolean
+    approvalRequired?: boolean
     orchestration: { join: 'all' | 'any' }
+    // Agent-node payload; always populated for type 'agent'.
+    agent?: string
+    agentMode?: 'scoped' | 'global'
+    provider?: string
+    model?: string
+    apiMode?: string
+    reasoningEffort?: string
+    skills?: string[]
+    images?: string[]
+    // Deterministic-node payload ('script' nodes).
+    runtime?: string
+    code?: string
   }
 }
 
 export function assertWorkflowAgentDependencies(nodes: WorkflowNodeSnapshot[]): void {
-  for (const node of nodes) assertAgentAvailable(node.data.agent)
+  // Deterministic nodes carry no agent runtime; their wiring is validated by
+  // the dispatch registry in deterministic-executor.ts at execution time.
+  for (const node of nodes) {
+    if (node.type !== 'agent') continue
+    assertAgentAvailable(node.data.agent)
+  }
 }
 
 type WorkflowEdgeRoute = 'success' | 'failure' | 'always'
@@ -286,7 +297,9 @@ export function normalizeWorkflowNode(raw: unknown): WorkflowNodeSnapshot | null
   const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : ''
   if (!id) return null
   const type = typeof record.type === 'string' && record.type ? record.type : 'agent'
-  if (type !== 'agent') throw new Error(`workflow node ${id} must be an Agent node`)
+  if (type !== 'agent' && !isDeterministicWorkflowNodeType(type)) {
+    throw new Error(`workflow node ${id} must be an Agent node or a supported deterministic node type (${DETERMINISTIC_WORKFLOW_NODE_TYPES.join(', ')}); received: ${type}`)
+  }
   const data = record.data && typeof record.data === 'object' ? record.data as Record<string, any> : {}
   let join: 'all' | 'any' = 'all'
   if (Object.prototype.hasOwnProperty.call(data, 'orchestration')) {
@@ -297,6 +310,7 @@ export function normalizeWorkflowNode(raw: unknown): WorkflowNodeSnapshot | null
     }
     join = orchestration.join
   }
+  if (type !== 'agent') return normalizeDeterministicWorkflowNode(id, type, record, join)
   const agent = typeof data.agent === 'string' && data.agent.trim() ? data.agent.trim() : 'hermes'
   if (agent !== 'hermes' && agent !== 'ekko-agent' && agent !== 'claude-code' && agent !== 'codex' && agent !== 'pi') {
     throw new Error(`workflow node ${id} has unsupported agent runtime`)
@@ -346,6 +360,38 @@ export function normalizeWorkflowNode(raw: unknown): WorkflowNodeSnapshot | null
       orchestration: { join },
     },
   }
+}
+
+function normalizeDeterministicWorkflowNode(
+  id: string,
+  type: WorkflowDeterministicNodeType,
+  record: Record<string, any>,
+  join: 'all' | 'any',
+): WorkflowNodeSnapshot {
+  const data = record.data && typeof record.data === 'object' ? record.data as Record<string, any> : {}
+  const rawPosition = record.position && typeof record.position === 'object' && !Array.isArray(record.position)
+    ? record.position as Record<string, unknown>
+    : null
+  const position = rawPosition && Number.isFinite(rawPosition.x) && Number.isFinite(rawPosition.y)
+    ? { x: Number(rawPosition.x), y: Number(rawPosition.y) }
+    : undefined
+  return {
+    id,
+    type,
+    ...(position ? { position } : {}),
+    data: {
+      title: typeof data.title === 'string' && data.title.trim() ? data.title.trim() : id,
+      input: typeof data.input === 'string' ? data.input : '',
+      orchestration: { join },
+      ...(type === 'script' ? normalizeWorkflowScriptNodeData(id, data) : {}),
+    },
+  }
+}
+
+function normalizeWorkflowScriptNodeData(id: string, data: Record<string, any>): { runtime: string; code: string } {
+  const runtime = typeof data.runtime === 'string' && data.runtime.trim() ? data.runtime.trim() : 'node'
+  if (runtime !== 'node') throw new Error(`workflow node ${id} has unsupported script runtime: ${runtime}`)
+  return { runtime, code: typeof data.code === 'string' ? data.code : '' }
 }
 
 export async function assertWorkflowNodeSkillDependencies(
@@ -1348,6 +1394,85 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
     })
   }
 
+  /**
+   * Single dispatch point for deterministic (non-agent) nodes: no chat session
+   * is created, the node row is persisted with an empty session_id and the
+   * executor result is stored in the run-store output column. Soft failures
+   * (executor errors) are returned to the scheduler so failure routes still
+   * get their edge evidence; cancellation and deadline overruns throw.
+   */
+  private async executeDeterministicWorkflowNode(args: {
+    node: WorkflowNodeSnapshot
+    run: WorkflowRunRecord
+    workflowId: string
+    profile: string
+    workspace: string | null
+    executionId: string
+    iterationPath: unknown[]
+    consumedEdgeEvaluationIds: string[]
+    input: string | ContentBlock[]
+    runDeadline: number | null
+    runTimeoutMessage: string | null
+    nodeStatuses: Record<string, WorkflowRuntimeState>
+    nextSequence: () => number
+    isCanceled: () => boolean
+    publishRunningStatus: () => void
+  }): Promise<{ status: 'completed'; output: string } | { status: 'failed'; error: string }> {
+    const { node } = args
+    const nodeSession = createWorkflowRunNodeSession({
+      run_id: args.run.id, workflow_id: args.workflowId, node_id: node.id, execution_id: args.executionId,
+      iteration_path: args.iterationPath,
+      consumed_edge_evaluation_ids: args.consumedEdgeEvaluationIds,
+      session_id: '', profile: args.profile, agent: '', agent_mode: '',
+      status: 'running',
+      sequence: args.nextSequence(),
+      remaining_timeout_ms_at_start: args.runDeadline === null ? null : Math.max(0, args.runDeadline - Date.now()),
+      started_at: Date.now(),
+    })
+    args.nodeStatuses[node.id] = 'running'
+    args.publishRunningStatus()
+    try {
+      const result = await withinWorkflowRunDeadline(
+        () => runWorkflowDeterministicNode({
+          workflowId: args.workflowId,
+          runId: args.run.id,
+          nodeId: node.id,
+          nodeType: node.type,
+          title: node.data.title,
+          data: node.data,
+          input: typeof args.input === 'string' ? args.input : JSON.stringify(args.input),
+          timeoutMs: args.runDeadline === null ? null : Math.max(0, args.runDeadline - Date.now()),
+          workspace: args.workspace,
+        }),
+        args.runDeadline, args.runTimeoutMessage,
+      )
+      if (args.isCanceled()) throw new Error(getWorkflowRun(args.run.id)?.error || 'Workflow run canceled')
+      updateWorkflowRunNodeSession(nodeSession.id, {
+        status: 'completed', finished_at: Date.now(), error: null, outputJson: result.output,
+      })
+      args.nodeStatuses[node.id] = 'completed'
+      args.publishRunningStatus()
+      return { status: 'completed', output: result.output }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const canceled = args.isCanceled()
+      const timedOut = !canceled && args.runTimeoutMessage !== null && message === args.runTimeoutMessage
+      updateWorkflowRunNodeSession(nodeSession.id, {
+        status: canceled ? 'canceled' : 'failed',
+        finished_at: Date.now(),
+        error: canceled ? (getWorkflowRun(args.run.id)?.error || message) : message,
+      })
+      args.nodeStatuses[node.id] = canceled ? 'canceled' : 'failed'
+      args.publishRunningStatus()
+      if (canceled || timedOut) {
+        const error = new Error(message)
+        if (timedOut) (error as any).workflowTimeout = true
+        throw error
+      }
+      return { status: 'failed', error: message }
+    }
+  }
+
   private async executeRecursiveCompiledWorkflowRun(args: {
     workflowId: string
     workspace: string | null
@@ -1464,9 +1589,7 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
       if (isCanceled()) throw new Error(getWorkflowRun(run.id)?.error || 'Workflow run canceled')
       executionCount += 1
       if (executionCount > MAX_WORKFLOW_RUN_EXECUTIONS) throw new Error(`workflow run execution budget exceeded: ${MAX_WORKFLOW_RUN_EXECUTIONS}`)
-      const sessionId = randomUUID()
       const executionId = pathExecutionId(node.id, path)
-      const target = resolveWorkflowNodeRunTarget(node.data.agent)
       const consumedIncoming = promptEdges.filter(edge => !ignoreHistoricalIncoming(edge) && edge.target === node.id && (
         (!activeIds.has(edge.source) && outputs.has(edge.source) && Boolean(evidenceForEdge(edge)))
         || latestEdgeDecisions.get(edge)?.status === 'taken'
@@ -1485,6 +1608,43 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
       const nodeStartedAt = Date.now()
       const remainingTimeoutMs = runDeadline === null ? undefined : runDeadline - nodeStartedAt
       if (remainingTimeoutMs !== undefined && remainingTimeoutMs <= 0) throw new Error(runTimeoutMessage!)
+      if (node.type !== 'agent') {
+        const outcome = await this.executeDeterministicWorkflowNode({
+          node, run, workflowId, profile, workspace,
+          executionId,
+          iterationPath: path,
+          consumedEdgeEvaluationIds: consumedIncoming.flatMap(edge => evidenceForEdge(edge)?.id ? [evidenceForEdge(edge)!.id] : []),
+          input: assembledInput,
+          runDeadline, runTimeoutMessage, nodeStatuses,
+          nextSequence: () => historySequence++,
+          isCanceled: () => this.canceledRunIds.has(run.id) || getWorkflowRun(run.id)?.status === 'canceled',
+          publishRunningStatus,
+        })
+        if (outcome.status === 'completed') {
+          outputs.set(node.id, outcome.output)
+          const outgoingEdges = forwardEdges.filter(item => activeIds.has(item.target) && item.source === node.id)
+          const conditionContext = workflowOutputConditionContext(outcome.output, outgoingEdges)
+          for (const edge of outgoingEdges) {
+            const decision = evaluateWorkflowEdgeRoute(edge.orchestration, 'success', conditionContext)
+            persistDecision(edge, 'success', decision, path)
+            decisions.set(edge, decision)
+          }
+          publishRunningStatus()
+          return
+        }
+        nodeStatuses[node.id] = 'failed'
+        if (path.length === 0) firstNodeFailure.value ||= { node, error: outcome.error }
+        recordNodeFailureForPath(path, outcome.error)
+        for (const edge of forwardEdges.filter(item => activeIds.has(item.target) && item.source === node.id)) {
+          const decision = evaluateWorkflowEdgeRoute(edge.orchestration, 'failure', { error: outcome.error })
+          persistDecision(edge, 'failure', decision, path)
+          decisions.set(edge, decision)
+        }
+        publishRunningStatus()
+        return
+      }
+      const sessionId = randomUUID()
+      const target = resolveWorkflowNodeRunTarget(node.data.agent)
       this.ensureWorkflowNodeSession({ sessionId, profile, workspace, node, target })
       const nodeSession = createWorkflowRunNodeSession({
         run_id: run.id, workflow_id: workflowId, node_id: node.id, execution_id: executionId,
@@ -1966,9 +2126,7 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
 
         for (const node of ready) {
           const execution = (async () => {
-          const nodeSessionId = randomUUID()
           runningOrDone.add(node.id)
-          const target = resolveWorkflowNodeRunTarget(node.data.agent)
           const consumedIncoming = edges.filter(edge => edge.target === node.id && (
             (!activeIds.has(edge.source) && outputs.has(edge.source) && Boolean(evidenceForEdge(edge)))
             || edgeDecisions.get(edge)?.status === 'taken'
@@ -1993,6 +2151,51 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
           if (remainingTimeoutMs !== undefined && remainingTimeoutMs <= 0) {
             return { node, ok: false, deadlineExceeded: true, error: runTimeoutMessage! }
           }
+          if (node.type !== 'agent') {
+            const outcome = await this.executeDeterministicWorkflowNode({
+              node, run, workflowId, profile, workspace,
+              executionId: executionIdFor(node.id),
+              iterationPath: executionPath,
+              consumedEdgeEvaluationIds: consumedIncoming.flatMap(edge => evidenceForEdge(edge)?.id ? [evidenceForEdge(edge)!.id] : []),
+              input: assembledInput,
+              runDeadline, runTimeoutMessage, nodeStatuses,
+              nextSequence: () => historySequence++,
+              isCanceled: () => this.canceledRunIds.has(run.id) || getWorkflowRun(run.id)?.status === 'canceled',
+              publishRunningStatus: () => this.setRuntimeStatus(workflowId, {
+                status: 'running', runId: run.id, nodeStatuses: { ...nodeStatuses },
+              }),
+            })
+            if (outcome.status === 'completed') {
+              outputs.set(node.id, outcome.output)
+              const outgoingEdges = outgoing.get(node.id) || []
+              const conditionContext = workflowOutputConditionContext(outcome.output, outgoingEdges)
+              for (const edge of outgoingEdges) {
+                recordEdgeDecision(edge, 'success', evaluateWorkflowEdgeRoute(edge.orchestration, 'success', conditionContext))
+              }
+              completed.add(node.id)
+              nodeStatuses[node.id] = 'completed'
+              this.setRuntimeStatus(workflowId, {
+                status: 'running',
+                runId: run.id,
+                nodeStatuses: { ...nodeStatuses },
+              })
+              return { node, ok: true }
+            }
+            nodeStatuses[node.id] = 'failed'
+            completed.add(node.id)
+            if (!firstNodeFailure) firstNodeFailure = { node, error: outcome.error }
+            for (const edge of outgoing.get(node.id) || []) {
+              recordEdgeDecision(edge, 'failure', evaluateWorkflowEdgeRoute(edge.orchestration, 'failure', { error: outcome.error }))
+            }
+            this.setRuntimeStatus(workflowId, {
+              status: 'running',
+              runId: run.id,
+              nodeStatuses: { ...nodeStatuses },
+            })
+            return { node, ok: false, handledFailure: true, error: outcome.error }
+          }
+          const nodeSessionId = randomUUID()
+          const target = resolveWorkflowNodeRunTarget(node.data.agent)
           this.ensureWorkflowNodeSession({ sessionId: nodeSessionId, profile, workspace, node, target })
           const nodeSession = createWorkflowRunNodeSession({
             run_id: run.id,
@@ -2353,7 +2556,8 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
       if (activeIds.has(session.node_id)) continue
       nodeStatuses[session.node_id] = session.status === 'blocked' ? 'failed' : session.status
       if (session.status === 'completed') {
-        outputs.set(session.node_id, lastAssistantOutput(session.session_id))
+        // Deterministic rows carry no chat session; their output lives in the run-store output column.
+        outputs.set(session.node_id, session.session_id ? lastAssistantOutput(session.session_id) : session.output_json)
       }
     }
 
@@ -2427,9 +2631,9 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
       }
     }
 
-    if (args.node.data.skills.length > 0) {
+    if ((args.node.data.skills?.length ?? 0) > 0) {
       parts.push('\n[Workflow selected skills]')
-      for (const skillName of args.node.data.skills) {
+      for (const skillName of args.node.data.skills || []) {
         const skill = await resolveWorkflowSkillContent({
           agent: args.node.data.agent,
           profile: args.profile,
@@ -2443,10 +2647,10 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
     const currentTask = args.overrideInput ?? args.node.data.input
     parts.push(`\n[Current task]\n${currentTask || 'Execute the current workflow node.'}`)
     const text = parts.join('\n').trim()
-    if (args.node.data.images.length === 0) return text
+    if ((args.node.data.images?.length ?? 0) === 0) return text
     return [
       { type: 'text', text },
-      ...args.node.data.images.map(workflowAttachmentBlock),
+      ...(args.node.data.images || []).map(workflowAttachmentBlock),
     ]
   }
 }

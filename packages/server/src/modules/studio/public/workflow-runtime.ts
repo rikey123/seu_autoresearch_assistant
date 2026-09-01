@@ -1,3 +1,24 @@
+export interface WorkflowDeterministicNodeRequest {
+  workflowId: string
+  runId: string
+  nodeId: string
+  nodeType: string
+  title: string
+  /** Normalized node data payload (e.g. runtime/code for script nodes). */
+  data: Record<string, unknown>
+  /** Assembled node input: upstream outputs followed by the current task. */
+  input: string
+  /** Remaining run-scoped timeout budget in ms; null means no deadline. */
+  timeoutMs: number | null
+  /** Workspace directory the node executes in; null means inherit. */
+  workspace: string | null
+}
+
+export interface WorkflowDeterministicNodeResult {
+  /** Final node output text; structured JSON text when the executor produced JSON. */
+  output: string
+}
+
 export interface WorkflowRuntimeDependencies {
   isRunCoordinatorAvailable(): boolean
   runAndWait(input: Record<string, unknown>, options: Record<string, unknown>): Promise<any>
@@ -5,6 +26,8 @@ export interface WorkflowRuntimeDependencies {
   stopAgentRun(sessionId: string): void
   deletePrimaryAgentSession(sessionId: string, profile: string): Promise<boolean>
   getAvailableModelGroups(profile: string): Promise<any[]>
+  /** Executes deterministic (non-agent) workflow nodes; omitted until wired. */
+  runDeterministicNode?(request: WorkflowDeterministicNodeRequest): Promise<WorkflowDeterministicNodeResult>
 }
 
 let dependencies: WorkflowRuntimeDependencies | null = null
@@ -32,3 +55,8 @@ export const deleteWorkflowPrimaryAgentSession = (sessionId: string, profile: st
 export const getWorkflowAvailableModelGroups = (profile: string) => (
   configured().getAvailableModelGroups(profile)
 )
+export const runWorkflowDeterministicNode = (request: WorkflowDeterministicNodeRequest): Promise<WorkflowDeterministicNodeResult> => {
+  const executor = configured().runDeterministicNode
+  if (!executor) throw new Error('workflow deterministic node executor is not configured')
+  return executor(request)
+}

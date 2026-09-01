@@ -5,6 +5,7 @@ import { deleteSessionForProfile } from '../modules/hermes/services/runtime/cli'
 import { listProfileNamesFromDisk } from '../modules/hermes/services/profiles/profile'
 import { getAvailableModelGroupsForProfile } from '../modules/hermes/controllers/models'
 import { configureWorkflowRuntime } from '../modules/studio/public/workflow-runtime'
+import { executeWorkflowDeterministicNode } from '../modules/studio/services/workflow/deterministic-executor'
 
 configureWorkflowRuntime({
   isRunCoordinatorAvailable: () => Boolean(getChatRunServer()?.runAndWait),
@@ -26,4 +27,5 @@ configureWorkflowRuntime({
     return deleteSessionForProfile(sessionId, targetProfile)
   },
   getAvailableModelGroups: getAvailableModelGroupsForProfile,
+  runDeterministicNode: executeWorkflowDeterministicNode,
 })
