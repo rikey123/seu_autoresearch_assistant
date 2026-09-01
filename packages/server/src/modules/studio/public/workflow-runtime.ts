@@ -12,6 +12,13 @@ export interface WorkflowDeterministicNodeRequest {
   timeoutMs: number | null
   /** Workspace directory the node executes in; null means inherit. */
   workspace: string | null
+  /**
+   * Cancellation handle for the owning run: aborted when the run deadline
+   * fires or the run is stopped. Optional so existing DI executors stay
+   * compatible; executors that receive it must terminate the underlying work
+   * (including spawned processes) and settle exactly once.
+   */
+  signal?: AbortSignal
 }
 
 export interface WorkflowDeterministicNodeResult {

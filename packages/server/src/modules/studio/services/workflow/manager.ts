@@ -30,7 +30,10 @@ import {
   type WorkflowRunNodeSessionRecord,
   type WorkflowRunNodeStatus,
   type WorkflowRunRecord,
+  type WorkflowRunStatus,
 } from '../../repositories/workflow-run-store'
+import { getDb } from '../../infrastructure/database'
+import { WORKFLOW_RUNS_TABLE } from '../../infrastructure/database/schemas'
 import { createSession, deleteSession, getSession, getSessionDetail } from '../../repositories/session-store'
 import type { ContentBlock } from '../../contracts/runs/session'
 import type { AuthenticatedUser } from '../../public/auth'
@@ -1025,27 +1028,44 @@ function isChatRunWaitTimeout(message: string, timeoutMs?: number): boolean {
   return typeof timeoutMs === 'number' && timeoutMs > 0 && message === `chat-run timed out after ${timeoutMs}ms`
 }
 
+/**
+ * Races an operation against the run deadline. The operation receives a
+ * derived AbortSignal so a timeout — or an abort of the optional caller
+ * signal (run cancellation) — terminates the underlying work instead of only
+ * abandoning the outer promise. Each side settles the race exactly once, and
+ * the losing promise's settlement is never surfaced as an unhandled rejection.
+ */
 export async function withinWorkflowRunDeadline<T>(
-  operation: () => Promise<T>,
+  operation: (signal: AbortSignal) => Promise<T>,
   deadlineAt: number | null,
   timeoutError: string | null,
+  options: { signal?: AbortSignal } = {},
 ): Promise<T> {
-  if (deadlineAt === null) return operation()
-  const remainingMs = deadlineAt - Date.now()
-  if (remainingMs <= 0) throw new Error(timeoutError || 'Workflow run timed out')
+  const message = timeoutError || 'Workflow run timed out'
+  if (deadlineAt !== null && deadlineAt - Date.now() <= 0) throw new Error(message)
+  const controller = new AbortController()
+  const externalSignal = options.signal
+  const onExternalAbort = () => controller.abort(externalSignal?.reason)
+  if (externalSignal) {
+    if (externalSignal.aborted) onExternalAbort()
+    else externalSignal.addEventListener('abort', onExternalAbort, { once: true })
+  }
   let timer: ReturnType<typeof setTimeout> | null = null
+  const deadlinePromise = new Promise<never>((_resolve, reject) => {
+    if (deadlineAt === null) return
+    timer = setTimeout(() => {
+      controller.abort(message)
+      reject(new Error(message))
+    }, deadlineAt - Date.now())
+  })
+  deadlinePromise.catch(() => {})
   try {
-    return await Promise.race([
-      operation(),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(timeoutError || 'Workflow run timed out')),
-          remainingMs,
-        )
-      }),
-    ])
+    const operationPromise = Promise.resolve(operation(controller.signal))
+    operationPromise.catch(() => {})
+    return await Promise.race([operationPromise, deadlinePromise])
   } finally {
     if (timer) clearTimeout(timer)
+    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort)
   }
 }
 
@@ -1081,11 +1101,33 @@ function withoutRemovedWorkflowRecordPolicy(workflow: WorkflowRecord): WorkflowR
   }
 }
 
+interface PreparedWorkflowRerunLifecycle {
+  run: WorkflowRunRecord
+  updatedRun: WorkflowRunRecord
+  profile: string
+  rerunPreflight: Awaited<ReturnType<typeof preflightWorkflowRerunDefinition>>
+  nodes: WorkflowNodeSnapshot[]
+  edges: WorkflowEdgeSnapshot[]
+  nodeById: Map<string, WorkflowNodeSnapshot>
+  existingNodeSessions: WorkflowRunNodeSessionRecord[]
+  preserveStartNode: boolean
+  activeIds: Set<string>
+  activeNodes: WorkflowNodeSnapshot[]
+  downstreamStartIds: string[]
+  outputs: Map<string, string>
+  nodeStatuses: Record<string, WorkflowRuntimeState>
+  startedAt: number
+  runDeadline: number | null
+  runTimeoutMessage: string | null
+}
+
 export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
   private readonly runtimeStatuses = new Map<string, WorkflowRuntimeStatus>()
   private readonly canceledRunIds = new Set<string>()
   private readonly pendingNodeApprovals = new Map<string, PendingNodeApproval>()
   private readonly runAdmissionTails = new Map<string, Promise<void>>()
+  /** Per-run abort handles for in-flight deterministic node executors. */
+  private readonly runNodeCancellations = new Map<string, Set<AbortController>>()
 
   private async acquireRunAdmission(workflowId: string): Promise<() => void> {
     const previous = this.runAdmissionTails.get(workflowId) || Promise.resolve()
@@ -1098,6 +1140,28 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
       releaseCurrent()
       if (this.runAdmissionTails.get(workflowId) === tail) this.runAdmissionTails.delete(workflowId)
     }
+  }
+
+  private registerDeterministicNodeCancellation(runId: string, controller: AbortController): void {
+    let controllers = this.runNodeCancellations.get(runId)
+    if (!controllers) {
+      controllers = new Set()
+      this.runNodeCancellations.set(runId, controllers)
+    }
+    controllers.add(controller)
+  }
+
+  private releaseDeterministicNodeCancellation(runId: string, controller: AbortController): void {
+    const controllers = this.runNodeCancellations.get(runId)
+    if (!controllers?.delete(controller)) return
+    if (controllers.size === 0) this.runNodeCancellations.delete(runId)
+  }
+
+  private abortDeterministicNodeCancellations(runId: string, reason: string): void {
+    const controllers = this.runNodeCancellations.get(runId)
+    if (!controllers) return
+    this.runNodeCancellations.delete(runId)
+    for (const controller of controllers) controller.abort(reason)
   }
 
   list(profile?: string | null): WorkflowRecord[] {
@@ -1199,6 +1263,10 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
     if (run.status !== 'queued' && run.status !== 'running') return run
     this.canceledRunIds.add(runId)
     this.cancelPendingNodeApprovals(runId)
+    // The cancellation set includes deterministic rows (session_id === ''):
+    // they carry no chat session to abort, so their in-flight executors are
+    // canceled through the run's abort registry instead.
+    this.abortDeterministicNodeCancellations(runId, reason)
     const finishedAt = Date.now()
     const nodeStatuses: Record<string, WorkflowRuntimeState> = {}
     const activeSessionIds = new Set<string>()
@@ -1431,9 +1499,11 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
     })
     args.nodeStatuses[node.id] = 'running'
     args.publishRunningStatus()
+    const cancellation = new AbortController()
+    this.registerDeterministicNodeCancellation(args.run.id, cancellation)
     try {
       const result = await withinWorkflowRunDeadline(
-        () => runWorkflowDeterministicNode({
+        signal => runWorkflowDeterministicNode({
           workflowId: args.workflowId,
           runId: args.run.id,
           nodeId: node.id,
@@ -1443,8 +1513,10 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
           input: typeof args.input === 'string' ? args.input : JSON.stringify(args.input),
           timeoutMs: args.runDeadline === null ? null : Math.max(0, args.runDeadline - Date.now()),
           workspace: args.workspace,
+          signal,
         }),
         args.runDeadline, args.runTimeoutMessage,
+        { signal: cancellation.signal },
       )
       if (args.isCanceled()) throw new Error(getWorkflowRun(args.run.id)?.error || 'Workflow run canceled')
       updateWorkflowRunNodeSession(nodeSession.id, {
@@ -1465,11 +1537,15 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
       args.nodeStatuses[node.id] = canceled ? 'canceled' : 'failed'
       args.publishRunningStatus()
       if (canceled || timedOut) {
-        const error = new Error(message)
+        // Carry the run's persisted error so the schedulers' terminal run write
+        // keeps the operator-facing cancellation reason, mirroring agent nodes.
+        const error = new Error(canceled ? (getWorkflowRun(args.run.id)?.error || message) : message)
         if (timedOut) (error as any).workflowTimeout = true
         throw error
       }
       return { status: 'failed', error: message }
+    } finally {
+      this.releaseDeterministicNodeCancellation(args.run.id, cancellation)
     }
   }
 
@@ -2487,20 +2563,56 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
     })
   }
 
-  async rerunFromNode(
-    workflowId: string,
+  /**
+   * Atomically reset a terminal run back to 'running' for a rerun. The UPDATE
+   * is guarded by the exact terminal status observed during preflight and the
+   * affected row count decides acceptance, so two concurrent reruns (or a
+   * concurrent lifecycle change) cannot both flip the same terminal run.
+   */
+  private resetTerminalRunForRerun(
     runId: string,
-    nodeId: string,
-    input: WorkflowRerunFromNodeInput = {},
-  ): Promise<WorkflowRunNowResult> {
-    const workflow = this.get(workflowId)
-    if (!workflow) {
-      const err = new Error('workflow not found')
-      ;(err as any).status = 404
-      throw err
+    expectedStatus: WorkflowRunStatus,
+    patch: {
+      requested_timeout_ms: number | null
+      deadline_at: number | null
+      started_at: number
+    },
+  ): WorkflowRunRecord | null {
+    const db = getDb()
+    if (!db) {
+      // JSON fallback has no affected-row SQL; the read-compare-write below
+      // runs in one synchronous block, which is atomic on the single store.
+      const existing = getWorkflowRun(runId)
+      if (!existing || existing.status !== expectedStatus) return null
+      return updateWorkflowRun(runId, {
+        status: 'running',
+        requested_timeout_ms: patch.requested_timeout_ms,
+        deadline_at: patch.deadline_at,
+        started_at: patch.started_at,
+        finished_at: null,
+        error: null,
+        allow_terminal_reset: true,
+      })
     }
-    const run = getWorkflowRun(runId)
-    if (!run || run.workflow_id !== workflowId) {
+    const result = db.prepare(`
+      UPDATE ${WORKFLOW_RUNS_TABLE}
+      SET status = 'running', requested_timeout_ms = ?, deadline_at = ?, started_at = ?, finished_at = NULL, error = NULL
+      WHERE id = ? AND status = ?
+    `).run(patch.requested_timeout_ms, patch.deadline_at, patch.started_at, runId, expectedStatus)
+    if (Number(result.changes) !== 1) return null
+    return getWorkflowRun(runId)
+  }
+
+  /** Acceptance phase of a rerun: validate, preflight, and CAS-reset the terminal run. */
+  private async prepareRerunLifecycle(args: {
+    workflowId: string
+    workflow: WorkflowRecord
+    runId: string
+    nodeId: string
+    input: WorkflowRerunFromNodeInput
+  }): Promise<PreparedWorkflowRerunLifecycle> {
+    const run = getWorkflowRun(args.runId)
+    if (!run || run.workflow_id !== args.workflowId) {
       const err = new Error('workflow run not found')
       ;(err as any).status = 404
       throw err
@@ -2511,16 +2623,10 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
       throw err
     }
 
-    if (!isWorkflowRunCoordinatorAvailable()) {
-      const err = new Error('chat-run server is not available')
-      ;(err as any).status = 503
-      throw err
-    }
-
-    const profile = input.profile?.trim() || run.profile || workflow.profile || 'default'
-    const rerunPreflight = await preflightWorkflowRerunDefinition({ run, nodeId, profile, preserveStartNode: input.preserveStartNode })
-    const acceptedRun = getWorkflowRun(runId)
-    if (!acceptedRun || acceptedRun.workflow_id !== workflowId) {
+    const profile = args.input.profile?.trim() || run.profile || args.workflow.profile || 'default'
+    const rerunPreflight = await preflightWorkflowRerunDefinition({ run, nodeId: args.nodeId, profile, preserveStartNode: args.input.preserveStartNode })
+    const acceptedRun = getWorkflowRun(args.runId)
+    if (!acceptedRun || acceptedRun.workflow_id !== args.workflowId) {
       throw Object.assign(new Error('workflow run not found'), { status: 404 })
     }
     if (acceptedRun.status === 'queued' || acceptedRun.status === 'running') {
@@ -2533,7 +2639,7 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
     const nodes = compiledGraph.nodes
     const edges = compiledGraph.edges
     const nodeById = new Map(nodes.map(node => [node.id, node]))
-    const targetNodeId = nodeId.trim()
+    const targetNodeId = args.nodeId.trim()
     if (!targetNodeId || !nodeById.has(targetNodeId)) {
       const err = new Error('workflow node not found in run snapshot')
       ;(err as any).status = 404
@@ -2546,7 +2652,7 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
 
     const existingNodeSessions = listWorkflowRunNodeSessions(run.id)
     const existingSessionByNode = latestNodeSessionsByNode(existingNodeSessions)
-    const preserveStartNode = Boolean(input.preserveStartNode)
+    const preserveStartNode = Boolean(args.input.preserveStartNode)
     const activeIds = rerunPreflight.activeNodeIds
     const activeNodes = rerunPreflight.activeNodes
     const downstreamStartIds = rerunPreflight.schedulerStartNodeIds
@@ -2575,19 +2681,59 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
     }
 
     const startedAt = Math.max(Date.now(), (run.started_at || 0) + 1)
-    const runDeadline = input.timeoutMs && input.timeoutMs > 0 ? startedAt + input.timeoutMs : null
-    const runTimeoutMessage = input.timeoutMs && input.timeoutMs > 0
-      ? `workflow run timed out after ${input.timeoutMs}ms`
+    const runDeadline = args.input.timeoutMs && args.input.timeoutMs > 0 ? startedAt + args.input.timeoutMs : null
+    const runTimeoutMessage = args.input.timeoutMs && args.input.timeoutMs > 0
+      ? `workflow run timed out after ${args.input.timeoutMs}ms`
       : null
-    const updatedRun = updateWorkflowRun(run.id, {
-      status: 'running',
-      requested_timeout_ms: input.timeoutMs ?? null,
+    const updatedRun = this.resetTerminalRunForRerun(run.id, acceptedRun.status, {
+      requested_timeout_ms: args.input.timeoutMs ?? null,
       deadline_at: runDeadline,
       started_at: startedAt,
-      finished_at: null,
-      error: null,
-      allow_terminal_reset: true,
-    }) || run
+    })
+    if (!updatedRun) {
+      throw Object.assign(new Error('workflow run changed during rerun preflight'), { status: 409 })
+    }
+    return {
+      run, updatedRun, profile, rerunPreflight, nodes, edges, nodeById, existingNodeSessions,
+      preserveStartNode, activeIds, activeNodes, downstreamStartIds, outputs, nodeStatuses,
+      startedAt, runDeadline, runTimeoutMessage,
+    }
+  }
+
+  async rerunFromNode(
+    workflowId: string,
+    runId: string,
+    nodeId: string,
+    input: WorkflowRerunFromNodeInput = {},
+  ): Promise<WorkflowRunNowResult> {
+    const workflow = this.get(workflowId)
+    if (!workflow) {
+      const err = new Error('workflow not found')
+      ;(err as any).status = 404
+      throw err
+    }
+
+    if (!isWorkflowRunCoordinatorAvailable()) {
+      const err = new Error('chat-run server is not available')
+      ;(err as any).status = 503
+      throw err
+    }
+
+    // The whole read-check-preflight-CAS acceptance phase is serialized per
+    // workflow so only one concurrent rerun can flip a terminal run back to
+    // 'running'; the CAS rowcount check remains as the durable backstop.
+    const releaseAdmission = await this.acquireRunAdmission(workflowId)
+    let prepared: PreparedWorkflowRerunLifecycle
+    try {
+      prepared = await this.prepareRerunLifecycle({ workflowId, workflow, runId, nodeId, input })
+    } finally {
+      releaseAdmission()
+    }
+    const {
+      run, updatedRun, profile, rerunPreflight, nodes, edges,
+      preserveStartNode, activeIds, activeNodes, downstreamStartIds, outputs, nodeStatuses,
+      startedAt, runDeadline, runTimeoutMessage,
+    } = prepared
     this.canceledRunIds.delete(run.id)
     for (const node of activeNodes) nodeStatuses[node.id] = 'queued'
     this.setRuntimeStatus(workflow.id, {
@@ -2605,10 +2751,10 @@ export class WorkflowManager extends EventEmitter<WorkflowManagerEvents> {
       startNodeIds: downstreamStartIds, activeIds,
       user: input.user, runDeadline, runTimeoutMessage,
       initialNodeStatuses: nodeStatuses, initialOutputs: outputs,
-      executionScope: `rerun:${startedAt}`,
+      executionScope: `rerun:${randomUUID()}`,
       ignoreHistoricalIncomingForStartNodes: !preserveStartNode,
     }
-    const activeLoops = compiledGraph.loops.filter(loop => loop.bodyNodeIds.some(activeNodeId => activeIds.has(activeNodeId)))
+    const activeLoops = rerunPreflight.compiled.loops.filter(loop => loop.bodyNodeIds.some(activeNodeId => activeIds.has(activeNodeId)))
     return activeLoops.length > 0
       ? this.executeRecursiveCompiledWorkflowRun({ ...sharedSchedulerArgs, loops: activeLoops })
       : this.executeCompletionDrivenDagRun(sharedSchedulerArgs)
