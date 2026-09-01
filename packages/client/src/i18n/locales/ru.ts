@@ -1180,6 +1180,13 @@ export default {
       promptPlaceholder: 'Опишите, что должен сделать этот агент...',
       skillsPlaceholder: 'Введите навык и нажмите Enter для добавления',
       uploadImages: 'Загрузить изображения',
+      readonlyBadge: 'Только чтение',
+    },
+    nodeType: {
+      script: 'Скрипт',
+      validate: 'Проверка',
+      render: 'Рендеринг',
+      unknown: 'Неизвестный тип',
     },
     status: {
       idle: 'Бездействует',

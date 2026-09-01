@@ -2794,7 +2794,13 @@ export default {
       title: '노드 이름', agent: '에이전트', model: '모델', apiMode: 'API 모드', input: '입력', approvalRequired: '완료 후 승인',
       join: '합류 전략', joinAll: '모든 입력 경로', joinAny: '입력 경로 중 하나',
       joinAllHelp: '모든 입력 경로가 선택되어야 실행하며 하나라도 불일치하면 건너뜁니다.', joinAnyHelp: '첫 번째 입력 경로가 선택되면 한 번 실행하며 모두 불일치할 때만 건너뜁니다.',
-      promptPlaceholder: '이 에이전트가 수행할 작업을 설명하세요...', skillsPlaceholder: '스킬을 입력하고 Enter로 추가', uploadImages: '이미지 업로드',
+      promptPlaceholder: '이 에이전트가 수행할 작업을 설명하세요...', skillsPlaceholder: '스킬을 입력하고 Enter로 추가', uploadImages: '이미지 업로드', readonlyBadge: '읽기 전용',
+    },
+    nodeType: {
+      script: '스크립트',
+      validate: '검증',
+      render: '렌더링',
+      unknown: '알 수 없는 유형',
     },
     status: {
       idle: '대기', queued: '대기열', running: '실행 중', pending_approval: '승인 대기', completed: '완료', skipped: '건너뜀', failed: '실패', approval_rejected: '승인 거부', canceled: '취소됨',

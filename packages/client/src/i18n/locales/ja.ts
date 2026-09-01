@@ -2794,7 +2794,13 @@ export default {
       title: 'ノード名', agent: 'エージェント', model: 'モデル', apiMode: 'API モード', input: '入力', approvalRequired: '完了後承認',
       join: '合流方法', joinAll: 'すべての入力ルート', joinAny: 'いずれかの入力ルート',
       joinAllHelp: 'すべての入力ルートが有効な場合のみ実行し、1つでも不一致ならスキップします。', joinAnyHelp: '最初の有効な入力ルートで1回実行し、すべて不一致の場合のみスキップします。',
-      promptPlaceholder: 'このエージェントが行う内容を入力してください...', skillsPlaceholder: 'スキルを入力し、Enter で追加', uploadImages: '画像をアップロード',
+      promptPlaceholder: 'このエージェントが行う内容を入力してください...', skillsPlaceholder: 'スキルを入力し、Enter で追加', uploadImages: '画像をアップロード', readonlyBadge: '読み取り専用',
+    },
+    nodeType: {
+      script: 'スクリプト',
+      validate: '検証',
+      render: 'レンダリング',
+      unknown: '不明なタイプ',
     },
     status: {
       idle: '待機中', queued: '待機列', running: '実行中', pending_approval: '承認待ち', completed: '完了', skipped: 'スキップ', failed: '失敗', approval_rejected: '承認拒否', canceled: 'キャンセル済み',

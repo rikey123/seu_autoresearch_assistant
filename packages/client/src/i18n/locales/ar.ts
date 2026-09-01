@@ -1331,6 +1331,13 @@ export default {
       promptPlaceholder: 'اوصف ما يجب أن يفعله هذا الوكيل...',
       skillsPlaceholder: 'المهارات، اضغط Enter للإضافة',
       uploadImages: 'رفع الصور',
+      readonlyBadge: 'للقراءة فقط',
+    },
+    nodeType: {
+      script: 'سكربت',
+      validate: 'تحقق',
+      render: 'عرض',
+      unknown: 'نوع غير معروف',
     },
     status: {
       idle: 'خامل',

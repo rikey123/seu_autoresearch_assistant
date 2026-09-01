@@ -19,9 +19,14 @@ import { buildWorkflowEvidenceRows, latestWorkflowNodeSession, workflowNodeSessi
 import { resolveWorkflowRunPageSwipe, type WorkflowRunPagerPage } from '@/utils/workflow-run-pager'
 import {
   normalizeWorkflowRunEdge,
-  normalizeWorkflowRunNodeTargets,
   workflowRunEdgeCanvasLabel,
 } from '@/utils/workflow-run-snapshot'
+import {
+  normalizeDeterministicWorkflowNodeData,
+  normalizeWorkflowNodeFrame,
+  normalizeWorkflowNodeType,
+  serializeDeterministicWorkflowNode,
+} from '@/utils/workflow-node-type'
 import {
   inferWorkflowConditionValueType,
   parseWorkflowConditionValue,
@@ -61,6 +66,7 @@ import {
   workflowLoopBodyNodeIds,
 } from '@/utils/workflow-edge-authoring'
 import WorkflowAgentNode from '@/components/hermes/workflow/WorkflowAgentNode.vue'
+import WorkflowDeterministicNode from '@/components/hermes/workflow/WorkflowDeterministicNode.vue'
 import { canScopedCodingAgentUseProvider } from '@/utils/codingAgentProviders'
 import WorkflowFieldHelp from '@/components/hermes/workflow/WorkflowFieldHelp.vue'
 import WorkflowConditionEdge from '@/components/hermes/workflow/WorkflowConditionEdge.vue'
@@ -116,6 +122,7 @@ import { buildWorkflowSkillOptions, workflowAgentToSkillTarget } from '@/utils/h
 import type {
   WorkflowAgentNodeData,
   WorkflowAgentNodeEditableData,
+  WorkflowDeterministicNodeData,
   WorkflowNodeStatus,
   WorkflowSelectOption,
 } from '@/components/hermes/workflow/types'
@@ -162,15 +169,29 @@ const WORKFLOW_RUNS_PANEL_WIDTH = 280
 const WORKFLOW_CHAT_PANEL_STORAGE_KEY = 'hermes.workflow.chatPanelWidth'
 const WORKFLOW_NODE_DEFAULT_WIDTH = 300
 const WORKFLOW_NODE_DEFAULT_HEIGHT = 550
+const WORKFLOW_NODE_FALLBACK_STYLE = {
+  width: `${WORKFLOW_NODE_DEFAULT_WIDTH}px`,
+  height: `${WORKFLOW_NODE_DEFAULT_HEIGHT}px`,
+}
 
-interface WorkflowNode {
+interface WorkflowCanvasNodeBase {
   id: string
-  type: 'agent'
   position: { x: number; y: number }
   dragHandle: string
   style: { width: string; height: string }
+}
+
+interface WorkflowAgentCanvasNode extends WorkflowCanvasNodeBase {
+  type: 'agent'
   data: WorkflowAgentNodeData
 }
+
+interface WorkflowDeterministicCanvasNode extends WorkflowCanvasNodeBase {
+  type: string
+  data: WorkflowDeterministicNodeData
+}
+
+type WorkflowNode = WorkflowAgentCanvasNode | WorkflowDeterministicCanvasNode
 
 interface WorkflowEdgeOrchestration {
   route: 'success' | 'failure' | 'always'
@@ -595,11 +616,23 @@ function withRuntimeNodeData(data: WorkflowAgentNodeData): WorkflowAgentNodeData
   }
 }
 
+function isWorkflowAgentNode(node: WorkflowNode): node is WorkflowAgentCanvasNode {
+  return node.type === 'agent'
+}
+
+function withWorkflowNodeRuntimeData(
+  node: WorkflowNode,
+  runtime: { status: WorkflowNodeStatus; statusError: string | null; readonly: boolean },
+): WorkflowNode {
+  return isWorkflowAgentNode(node)
+    ? { ...node, data: withRuntimeNodeData({ ...node.data, ...runtime }) }
+    : { ...node, data: { ...node.data, ...runtime } }
+}
+
 function refreshWorkflowNodeSkillOptions() {
-  nodes.value = nodes.value.map<WorkflowNode>(node => ({
-    ...node,
-    data: withRuntimeNodeData(node.data),
-  }))
+  nodes.value = nodes.value.map<WorkflowNode>(node => (isWorkflowAgentNode(node)
+    ? { ...node, data: withRuntimeNodeData(node.data) }
+    : node))
 }
 
 async function ensureSkillOptionsForAgent(agent: string, profile = activeWorkflowProfile.value): Promise<void> {
@@ -633,7 +666,7 @@ async function ensureSkillOptionsForAgent(agent: string, profile = activeWorkflo
 }
 
 function ensureSkillOptionsForVisibleNodes() {
-  const agents = new Set(nodes.value.map(node => node.data.agent))
+  const agents = new Set(nodes.value.filter(isWorkflowAgentNode).map(node => node.data.agent))
   for (const agent of agents) void ensureSkillOptionsForAgent(agent)
 }
 
@@ -682,7 +715,8 @@ const nodes = ref<WorkflowNode[]>(makeInitialNodes())
 const edges = ref<WorkflowEdge[]>([])
 
 function unavailableWorkflowAgent() {
-  return nodes.value.find(node => !isAgentStatusAvailable(agentStatusSnapshot.value, node.data.agent))
+  return nodes.value.filter(isWorkflowAgentNode)
+    .find(node => !isAgentStatusAvailable(agentStatusSnapshot.value, node.data.agent))
 }
 
 const edgeEditorEdge = computed(() => edges.value.find(edge => edge.id === edgeEditorId.value) || null)
@@ -901,11 +935,12 @@ watch(visibleWorkflowApprovalKey, (key, previousKey) => {
 })
 
 watch([agentOptions, modelGroups], () => {
-  nodes.value = normalizeWorkflowRunNodeTargets(
-    nodes.value,
-    Boolean(selectedWorkflowRunId.value),
-    normalizeNodeModel,
-  )
+  if (!selectedWorkflowRunId.value) {
+    nodes.value = nodes.value.map<WorkflowNode>((node) => {
+      if (!isWorkflowAgentNode(node)) return node
+      return { ...node, data: { ...node.data, ...normalizeNodeModel(node.data) } }
+    })
+  }
   refreshWorkflowNodeSkillOptions()
 })
 
@@ -1048,27 +1083,23 @@ function normalizeNodeModel(data: WorkflowAgentNodeData): Pick<WorkflowAgentNode
 
 function cloneWorkflowNodes(source: WorkflowNode[], options: { resetRuntime?: boolean } = {}): WorkflowNode[] {
   return source.map(node => ({
-    ...node,
+    ...withWorkflowNodeRuntimeData(node, options.resetRuntime
+      ? { status: 'idle' as const, statusError: null, readonly: false }
+      : {
+          status: node.data.status,
+          statusError: node.data.statusError ?? null,
+          readonly: node.data.readonly === true,
+        }),
     position: { ...node.position },
     style: { ...node.style },
-    data: withRuntimeNodeData({
-      ...node.data,
-      ...(options.resetRuntime ? { status: 'idle' as const, statusError: null, readonly: false } : {}),
-    }),
   }))
 }
 
 function cloneWorkflowDefinitionNodes(source: WorkflowNode[]): WorkflowNode[] {
   return source.map(node => ({
-    ...node,
+    ...withWorkflowNodeRuntimeData(node, { status: 'idle', statusError: null, readonly: false }),
     position: { ...node.position },
     style: { ...node.style },
-    data: withRuntimeNodeData({
-      ...node.data,
-      status: 'idle',
-      statusError: null,
-      readonly: false,
-    }),
   }))
 }
 
@@ -1077,27 +1108,39 @@ function cloneWorkflowEdges(source: WorkflowEdge[]): WorkflowEdge[] {
 }
 
 function serializeWorkflowNodes(source: WorkflowNode[]): unknown[] {
-  return source.map(node => ({
-    id: node.id,
-    type: node.type,
-    position: { ...node.position },
-    dragHandle: node.dragHandle,
-    style: { ...node.style },
-    data: {
-      title: node.data.title,
-      agent: node.data.agent,
-      agentMode: node.data.agentMode,
-      provider: node.data.provider,
-      model: node.data.model,
-      apiMode: node.data.apiMode,
-      reasoningEffort: node.data.reasoningEffort,
-      input: node.data.input,
-      skills: [...node.data.skills],
-      images: [...node.data.images],
-      approvalRequired: node.data.approvalRequired === true,
-      orchestration: { join: node.data.orchestration?.join === 'any' ? 'any' : 'all' },
-    },
-  }))
+  return source.map((node) => {
+    if (!isWorkflowAgentNode(node)) {
+      return serializeDeterministicWorkflowNode({
+        id: node.id,
+        type: node.type,
+        position: node.position,
+        dragHandle: node.dragHandle,
+        style: node.style,
+        data: node.data,
+      })
+    }
+    return {
+      id: node.id,
+      type: node.type,
+      position: { ...node.position },
+      dragHandle: node.dragHandle,
+      style: { ...node.style },
+      data: {
+        title: node.data.title,
+        agent: node.data.agent,
+        agentMode: node.data.agentMode,
+        provider: node.data.provider,
+        model: node.data.model,
+        apiMode: node.data.apiMode,
+        reasoningEffort: node.data.reasoningEffort,
+        input: node.data.input,
+        skills: [...node.data.skills],
+        images: [...node.data.images],
+        approvalRequired: node.data.approvalRequired === true,
+        orchestration: { join: node.data.orchestration?.join === 'any' ? 'any' : 'all' },
+      },
+    }
+  })
 }
 
 function serializeWorkflowEdges(source: WorkflowEdge[]): unknown[] {
@@ -1132,17 +1175,27 @@ function currentWorkflowViewport(): WorkflowViewport {
 function normalizeStoredNode(raw: unknown, index: number): WorkflowNode {
   const record = raw && typeof raw === 'object' ? raw as Record<string, any> : {}
   const data = record.data && typeof record.data === 'object' ? record.data as Partial<WorkflowAgentNodeData> : {}
-  const rawPosition = record.position && typeof record.position === 'object' ? record.position as Record<string, unknown> : {}
-  const rawX = Number(rawPosition.x)
-  const rawY = Number(rawPosition.y)
-  const position = {
-    x: Number.isFinite(rawX) ? rawX : 80 + index * 320,
-    y: Number.isFinite(rawY) ? rawY : 120,
+  const type = normalizeWorkflowNodeType(record.type)
+  const frame = normalizeWorkflowNodeFrame(record, index)
+  const id = typeof record.id === 'string' && record.id ? record.id : `agent-${index + 1}`
+  const title = typeof data.title === 'string' && data.title ? data.title : t('workflow.newNodeTitle', { count: index + 1 })
+  if (type !== 'agent') {
+    return {
+      id,
+      type,
+      position: frame.position,
+      dragHandle: frame.dragHandle,
+      style: {
+        width: frame.storedWidth || WORKFLOW_NODE_FALLBACK_STYLE.width,
+        height: frame.storedHeight || WORKFLOW_NODE_FALLBACK_STYLE.height,
+      },
+      data: normalizeDeterministicWorkflowNodeData(data, title) as WorkflowDeterministicNodeData,
+    }
   }
   const node = makeNode(
-    typeof record.id === 'string' && record.id ? record.id : `agent-${index + 1}`,
-    typeof data.title === 'string' && data.title ? data.title : t('workflow.newNodeTitle', { count: index + 1 }),
-    position,
+    id,
+    title,
+    frame.position,
     {
       agent: data.agent,
       agentMode: data.agentMode === 'global' ? 'global' : 'scoped',
@@ -1160,10 +1213,10 @@ function normalizeStoredNode(raw: unknown, index: number): WorkflowNode {
   )
   return {
     ...node,
-    dragHandle: typeof record.dragHandle === 'string' && record.dragHandle ? record.dragHandle : '.node-header',
+    dragHandle: frame.dragHandle,
     style: {
-      width: typeof record.style?.width === 'string' ? record.style.width : node.style.width,
-      height: typeof record.style?.height === 'string' ? record.style.height : node.style.height,
+      width: frame.storedWidth || node.style.width,
+      height: frame.storedHeight || node.style.height,
     },
   }
 }
@@ -1724,14 +1777,10 @@ async function applyWorkflowRunSnapshot(run: WorkflowRunRecord) {
       !hasSnapshotPosition && fallbackPosition ? { ...record, position: fallbackPosition } : record,
       index,
     )
-  }).map<WorkflowNode>(node => ({
-    ...node,
-    data: withRuntimeNodeData({
-      ...node.data,
-      status: workflowNodeStatusFromRun(run, node.id),
-      statusError: workflowNodeErrorFromRun(run, node.id),
-      readonly: true,
-    }),
+  }).map<WorkflowNode>(node => withWorkflowNodeRuntimeData(node, {
+    status: workflowNodeStatusFromRun(run, node.id),
+    statusError: workflowNodeErrorFromRun(run, node.id),
+    readonly: true,
   }))
   edges.value = run.snapshot_edges.map(normalizeStoredEdge).filter((edge): edge is WorkflowEdge => Boolean(edge))
   nextNodeIndex.value = nextIndexFromNodes(nodes.value)
@@ -2205,13 +2254,10 @@ function handleWorkflowRuntimeStatus(status: WorkflowRuntimeStatus) {
     }
   }
   if (!selectedWorkflowRunId.value || selectedWorkflowRunId.value !== status.runId) return
-  nodes.value = nodes.value.map<WorkflowNode>(node => ({
-    ...node,
-    data: withRuntimeNodeData({
-      ...node.data,
-      status: workflowNodeStatusFromRuntime(status, node.id),
-      statusError: workflowNodeErrorFromRuntime(status, node.id),
-    }),
+  nodes.value = nodes.value.map<WorkflowNode>(node => withWorkflowNodeRuntimeData(node, {
+    status: workflowNodeStatusFromRuntime(status, node.id),
+    statusError: workflowNodeErrorFromRuntime(status, node.id),
+    readonly: node.data.readonly === true,
   }))
 }
 
@@ -2336,14 +2382,10 @@ async function applyWorkflow(
   workflowName.value = workflow.name
   workflowWorkspace.value = workflow.workspace
   const runtimeStatus = workflowCanvasRuntimeStatus(workflow.id)
-  nodes.value = cloneWorkflowNodes(workflow.nodes, { resetRuntime: options.resetRuntime }).map<WorkflowNode>(node => ({
-    ...node,
-    data: withRuntimeNodeData({
-      ...node.data,
-      status: options.resetRuntime ? 'idle' : workflowNodeStatusFromRuntime(runtimeStatus, node.id),
-      statusError: options.resetRuntime ? null : workflowNodeErrorFromRuntime(runtimeStatus, node.id),
-      readonly: false,
-    }),
+  nodes.value = cloneWorkflowNodes(workflow.nodes, { resetRuntime: options.resetRuntime }).map<WorkflowNode>(node => withWorkflowNodeRuntimeData(node, {
+    status: options.resetRuntime ? 'idle' : workflowNodeStatusFromRuntime(runtimeStatus, node.id),
+    statusError: options.resetRuntime ? null : workflowNodeErrorFromRuntime(runtimeStatus, node.id),
+    readonly: false,
   }))
   edges.value = cloneWorkflowEdges(workflow.edges)
   nextNodeIndex.value = workflow.nextNodeIndex
@@ -2555,6 +2597,7 @@ function workflowValidationError(): string | null {
   for (const node of nodes.value) {
     const label = workflowNodeLabel(node)
     if (!node.data.title.trim()) return t('workflow.validation.nodeNameRequired', { node: node.id })
+    if (!isWorkflowAgentNode(node)) continue
     const usesGlobalCodingAgent = ['claude-code', 'codex', 'pi'].includes(node.data.agent)
       && node.data.agentMode === 'global'
     if (!usesGlobalCodingAgent && !node.data.provider.trim()) return t('workflow.validation.providerRequired', { node: label })
@@ -2792,7 +2835,7 @@ function initialRunNodeStatuses(sourceNodes: WorkflowNode[], sourceEdges: Workfl
 function updateNodeData(id: string, patch: Partial<WorkflowAgentNodeEditableData>) {
   if (selectedWorkflowRunId.value) return
   nodes.value = nodes.value.map<WorkflowNode>((node) => {
-    if (node.id !== id) return node
+    if (!isWorkflowAgentNode(node) || node.id !== id) return node
     const agentChanged = typeof patch.agent === 'string' && patch.agent !== node.data.agent
     const nextAgent = typeof patch.agent === 'string' ? patch.agent : node.data.agent
     const data = {
@@ -3746,6 +3789,18 @@ function nodeColor(node: { data: WorkflowAgentNodeData }) {
         >
           <template #node-agent="nodeProps">
             <WorkflowAgentNode v-bind="nodeProps" />
+          </template>
+
+          <template #node-script="nodeProps">
+            <WorkflowDeterministicNode v-bind="nodeProps" />
+          </template>
+
+          <template #node-validate="nodeProps">
+            <WorkflowDeterministicNode v-bind="nodeProps" />
+          </template>
+
+          <template #node-render="nodeProps">
+            <WorkflowDeterministicNode v-bind="nodeProps" />
           </template>
 
           <template #edge-smoothstep="edgeProps">

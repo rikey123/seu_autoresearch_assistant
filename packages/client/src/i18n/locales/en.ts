@@ -1342,6 +1342,13 @@ export default {
       promptPlaceholder: 'Describe what this agent should do...',
       skillsPlaceholder: 'Skills, press Enter to add',
       uploadImages: 'Upload images',
+      readonlyBadge: 'Read-only',
+    },
+    nodeType: {
+      script: 'Script',
+      validate: 'Validate',
+      render: 'Render',
+      unknown: 'Unknown type',
     },
     status: {
       idle: 'Idle',
