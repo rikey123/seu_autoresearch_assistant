@@ -13,7 +13,11 @@ import pt from '../../packages/client/src/i18n/locales/pt'
 import ar from '../../packages/client/src/i18n/locales/ar'
 import {
   WORKFLOW_AGENT_NODE_DATA_KEYS,
+  WORKFLOW_DETERMINISTIC_NODE_TYPES,
+  WORKFLOW_DETERMINISTIC_PRESERVED_DATA_KEYS,
   WORKFLOW_NODE_RUNTIME_DATA_KEYS,
+  createDeterministicWorkflowNodeData,
+  isDeterministicWorkflowNodeType,
   normalizeDeterministicWorkflowNodeData,
   normalizeWorkflowNodeFrame,
   normalizeWorkflowNodeType,
@@ -46,7 +50,6 @@ describe('workflow node type normalization', () => {
     const stored = {
       title: 'Parse PDF',
       command: 'python parse.py',
-      input: 'legacy prompt leak',
       agent: 'hermes',
       agentMode: 'scoped',
       skills: ['pdf-read'],
@@ -57,9 +60,34 @@ describe('workflow node type normalization', () => {
     const data = normalizeDeterministicWorkflowNodeData(stored, 'Parse PDF')
     expect(data).toEqual({ title: 'Parse PDF', command: 'python parse.py', status: 'idle' })
     for (const agentKey of WORKFLOW_AGENT_NODE_DATA_KEYS) {
+      if (WORKFLOW_DETERMINISTIC_PRESERVED_DATA_KEYS.includes(agentKey)) continue
       expect(data, agentKey).not.toHaveProperty(agentKey)
     }
     expect(data).not.toHaveProperty('statusError')
+    expect(data).not.toHaveProperty('readonly')
+  })
+
+  it('keeps the script contract keys input and orchestration while stripping other agent fields', () => {
+    const stored = {
+      title: 'Parse PDF',
+      input: 'raw payload',
+      orchestration: { join: 'any' },
+      agent: 'hermes',
+      skills: ['pdf-read'],
+      onUpdate: () => {},
+      status: 'failed',
+      readonly: true,
+    }
+    const data = normalizeDeterministicWorkflowNodeData(stored, 'Parse PDF')
+    expect(data).toEqual({
+      title: 'Parse PDF',
+      input: 'raw payload',
+      orchestration: { join: 'any' },
+      status: 'idle',
+    })
+    expect(data).not.toHaveProperty('agent')
+    expect(data).not.toHaveProperty('skills')
+    expect(data).not.toHaveProperty('onUpdate')
     expect(data).not.toHaveProperty('readonly')
   })
 
@@ -85,7 +113,7 @@ describe('workflow node type normalization', () => {
 })
 
 describe('workflow deterministic node serialization', () => {
-  it('never writes agent fields for script nodes while keeping node-level fields', () => {
+  it('keeps script contract fields for script nodes while stripping agent session fields', () => {
     const onUpdate = () => {}
     const serialized = serializeDeterministicWorkflowNode({
       id: 'agent-2',
@@ -124,16 +152,18 @@ describe('workflow deterministic node serialization', () => {
       position: { x: 10, y: 20 },
       dragHandle: '.node-header',
       style: { width: '300px', height: '550px' },
-      data: { title: 'Run checks', command: 'pytest -q' },
+      data: { title: 'Run checks', command: 'pytest -q', input: 'do things', orchestration: { join: 'any' } },
     })
     const data = serialized.data as Record<string, unknown>
     for (const agentKey of WORKFLOW_AGENT_NODE_DATA_KEYS) {
+      if (WORKFLOW_DETERMINISTIC_PRESERVED_DATA_KEYS.includes(agentKey)) continue
       expect(data, agentKey).not.toHaveProperty(agentKey)
     }
     for (const runtimeKey of WORKFLOW_NODE_RUNTIME_DATA_KEYS) {
       expect(data, runtimeKey).not.toHaveProperty(runtimeKey)
     }
-    expect(serialized).not.toHaveProperty('data.agent')
+    expect(data).not.toHaveProperty('agent')
+    expect(data).not.toHaveProperty('onUpdate')
   })
 
   it('round-trips unknown-type records through normalize and serialize without loss', () => {
@@ -160,6 +190,74 @@ describe('workflow deterministic node serialization', () => {
     expect(serialized.id).toBe('node-9')
     expect(serialized.position).toEqual(record.position)
     expect(serialized.data).toEqual(record.data)
+  })
+})
+
+describe('workflow deterministic node creation factories', () => {
+  it('creates the minimal server contract payload for each deterministic node type', () => {
+    expect(createDeterministicWorkflowNodeData('script', 'Run checks')).toEqual({
+      title: 'Run checks',
+      input: '',
+      orchestration: { join: 'all' },
+      runtime: 'node',
+      code: '',
+    })
+    expect(createDeterministicWorkflowNodeData('validate', 'Check results')).toEqual({ title: 'Check results' })
+    expect(createDeterministicWorkflowNodeData('render', 'Render report')).toEqual({ title: 'Render report' })
+  })
+
+  it('covers exactly the deterministic node types the server dispatches', () => {
+    expect([...WORKFLOW_DETERMINISTIC_NODE_TYPES]).toEqual(['script', 'validate', 'render'])
+    expect(isDeterministicWorkflowNodeType('script')).toBe(true)
+    expect(isDeterministicWorkflowNodeType('validate')).toBe(true)
+    expect(isDeterministicWorkflowNodeType('render')).toBe(true)
+    expect(isDeterministicWorkflowNodeType('agent')).toBe(false)
+    expect(isDeterministicWorkflowNodeType('research')).toBe(false)
+    expect(isDeterministicWorkflowNodeType(42)).toBe(false)
+  })
+
+  it('round-trips a stored script node through normalize and serialize without loss', () => {
+    const stored = {
+      id: 'script-2',
+      type: 'script',
+      position: { x: 10, y: 20 },
+      dragHandle: '.node-header',
+      style: { width: '300px', height: '550px' },
+      data: {
+        title: 'Run checks',
+        input: 'raw payload',
+        orchestration: { join: 'any' },
+        runtime: 'node',
+        code: 'console.log(input)',
+      },
+    }
+    const loaded = normalizeDeterministicWorkflowNodeData(stored.data, 'Run checks')
+    const serialized = serializeDeterministicWorkflowNode({
+      id: stored.id,
+      type: 'script',
+      position: stored.position,
+      dragHandle: stored.dragHandle,
+      style: stored.style,
+      data: loaded,
+    })
+    expect(serialized.id).toBe('script-2')
+    expect(serialized.type).toBe('script')
+    expect(serialized.position).toEqual(stored.position)
+    expect(serialized.data).toEqual(stored.data)
+  })
+
+  it('keeps a freshly created script payload intact when the card callback is attached', () => {
+    const created = createDeterministicWorkflowNodeData('script', 'Node 3')
+    const loaded = normalizeDeterministicWorkflowNodeData(created, 'Node 3')
+    const serialized = serializeDeterministicWorkflowNode({
+      id: 'script-3',
+      type: 'script',
+      position: { x: 0, y: 0 },
+      dragHandle: '.node-header',
+      style: {},
+      data: { ...loaded, onUpdate: () => {} } as Record<string, unknown>,
+    })
+    expect(serialized.data).toEqual(created)
   })
 })
 
@@ -197,7 +295,7 @@ describe('workflow canvas type guard wiring', () => {
     }
   })
 
-  it('registers read-only canvas templates for script, validate, and render node types', () => {
+  it('registers canvas templates for script, validate, and render node types', () => {
     for (const nodeType of ['script', 'validate', 'render']) {
       expect(view).toContain(`#node-${nodeType}="nodeProps"`)
     }
@@ -209,12 +307,19 @@ describe('workflow canvas type guard wiring', () => {
     expect(card).toContain('workflow.nodeType.unknown')
   })
 
-  it('keeps the read-only card free of editing entry points', () => {
-    expect(card).not.toContain('onUpdate')
-    expect(card).not.toContain('onUploadImages')
-    expect(card).not.toContain('NInput')
-    expect(card).not.toContain('NSelect')
-    expect(card).not.toContain('NSwitch')
+  it('makes deterministic cards editable in authoring and inert in readonly replay', () => {
+    expect(card).toContain('onUpdate')
+    expect(card).toContain('<NInput')
+    expect(card).not.toContain('<NSelect')
+    expect(card).not.toContain('<NSwitch')
+    expect(card).toContain('node-code-input')
+    expect(card).toContain('workflow.deterministic.code')
+    expect(card).toContain('workflow.deterministic.codePlaceholder')
+    expect(card).toContain('workflow.deterministic.inputPlaceholder')
+    expect(card).toContain('workflow.deterministic.configPending')
+    expect(card).toContain('const isReadonly = computed(() => props.data.readonly === true)')
+    expect(card.match(/:disabled="isReadonly"/g)?.length).toBeGreaterThanOrEqual(3)
+    expect(card).toContain('nodrag nopan')
     expect(card).toContain('Handle id="input"')
     expect(card).toContain('Handle id="output"')
   })
@@ -222,6 +327,18 @@ describe('workflow canvas type guard wiring', () => {
   it('still creates agent nodes by default on the canvas', () => {
     const makeNodeBody = view.slice(view.indexOf('function makeNode('), view.indexOf('function makeInitialNodes'))
     expect(makeNodeBody).toContain("type: 'agent'")
+  })
+
+  it('creates deterministic nodes from the toolbar and from connection drops off deterministic nodes', () => {
+    expect(view).toContain('function makeDeterministicNode(')
+    expect(view).toContain('createDeterministicWorkflowNodeData(type, title)')
+    expect(view).toContain('function updateDeterministicNodeData(')
+    expect(view).toContain('async function addDeterministicNode(')
+    expect(view).toContain('createConnectedDeterministicNodeTransaction<WorkflowNode, WorkflowEdge>(')
+    expect(view).toContain('const nodeId = `${type}-${nextNodeIndex.value}`')
+    expect(view).toContain('/^(?:agent|script|validate|render)-(\\d+)$/')
+    expect(view).toContain('if (sourceNode && !isWorkflowAgentNode(sourceNode)) {')
+    expect(view).toContain('...normalizeDeterministicWorkflowNodeData(data, title)')
   })
 
   it('defines the deterministic node type labels in every locale', () => {
@@ -246,6 +363,98 @@ describe('workflow canvas type guard wiring', () => {
         validate: expectedForLocale.validate,
         render: expectedForLocale.render,
         unknown: expectedForLocale.unknown,
+      })
+    }
+  })
+
+  it('defines deterministic creation and card copy in every locale', () => {
+    const expected = {
+      en: {
+        addNodeResearch: 'Add research node',
+        code: 'Code',
+        codePlaceholder: 'JavaScript code executed by Node.js when this node runs',
+        inputPlaceholder: 'Optional input passed to the script (can stay empty)',
+        configPending: 'Configuration for this node type will be available in a future version.',
+      },
+      zh: {
+        addNodeResearch: '添加科研节点',
+        code: '代码',
+        codePlaceholder: '本节点执行时由 Node.js 运行的 JavaScript 代码',
+        inputPlaceholder: '传给脚本的可选输入（可留空）',
+        configPending: '该节点类型的配置将在后续版本提供。',
+      },
+      'zh-TW': {
+        addNodeResearch: '新增科研節點',
+        code: '程式碼',
+        codePlaceholder: '本節點執行時由 Node.js 執行的 JavaScript 程式碼',
+        inputPlaceholder: '傳給腳本的選用輸入（可留空）',
+        configPending: '此節點類型的設定將於後續版本提供。',
+      },
+      ja: {
+        addNodeResearch: 'リサーチノードを追加',
+        code: 'コード',
+        codePlaceholder: 'このノードの実行時に Node.js が実行する JavaScript コード',
+        inputPlaceholder: 'スクリプトに渡す任意の入力（省略可）',
+        configPending: 'このノードタイプの設定は今後のバージョンで提供予定です。',
+      },
+      ko: {
+        addNodeResearch: '리서치 노드 추가',
+        code: '코드',
+        codePlaceholder: '이 노드가 실행될 때 Node.js에서 실행되는 JavaScript 코드',
+        inputPlaceholder: '스크립트에 전달할 선택적 입력(비워 두어도 됨)',
+        configPending: '이 노드 유형의 설정은 이후 버전에서 제공될 예정입니다.',
+      },
+      fr: {
+        addNodeResearch: 'Ajouter un nœud de recherche',
+        code: 'Code',
+        codePlaceholder: 'Code JavaScript exécuté par Node.js lorsque ce nœud s’exécute',
+        inputPlaceholder: 'Entrée facultative transmise au script (peut rester vide)',
+        configPending: 'La configuration de ce type de nœud sera disponible dans une version ultérieure.',
+      },
+      es: {
+        addNodeResearch: 'Añadir nodo de investigación',
+        code: 'Código',
+        codePlaceholder: 'Código JavaScript que Node.js ejecuta cuando se ejecuta este nodo',
+        inputPlaceholder: 'Entrada opcional que se pasa al script (puede dejarse vacía)',
+        configPending: 'La configuración de este tipo de nodo estará disponible en una versión posterior.',
+      },
+      de: {
+        addNodeResearch: 'Forschungsknoten hinzufügen',
+        code: 'Code',
+        codePlaceholder: 'JavaScript-Code, den Node.js beim Ausführen dieses Knotens ausführt',
+        inputPlaceholder: 'Optionale Eingabe, die an das Skript übergeben wird (kann leer bleiben)',
+        configPending: 'Die Konfiguration dieses Knotentyps wird in einer späteren Version verfügbar sein.',
+      },
+      pt: {
+        addNodeResearch: 'Adicionar nó de pesquisa',
+        code: 'Código',
+        codePlaceholder: 'Código JavaScript executado pelo Node.js quando este nó é executado',
+        inputPlaceholder: 'Entrada opcional passada para o script (pode ficar vazia)',
+        configPending: 'A configuração deste tipo de nó estará disponível em uma versão futura.',
+      },
+      ru: {
+        addNodeResearch: 'Добавить исследовательский узел',
+        code: 'Код',
+        codePlaceholder: 'Код JavaScript, выполняемый Node.js при запуске этого узла',
+        inputPlaceholder: 'Необязательные входные данные, передаваемые скрипту (можно оставить пустым)',
+        configPending: 'Настройка этого типа узла появится в следующей версии.',
+      },
+      ar: {
+        addNodeResearch: 'إضافة عقدة بحث',
+        code: 'الشيفرة',
+        codePlaceholder: 'شيفرة JavaScript ينفذها Node.js عند تشغيل هذه العقدة',
+        inputPlaceholder: 'مدخل اختياري يُمرَّر إلى السكربت (يمكن تركه فارغًا)',
+        configPending: 'سيتم توفير إعدادات هذا النوع من العقد في إصدار لاحق.',
+      },
+    }
+    for (const [locale, messages] of Object.entries(localeMessages)) {
+      const expectedForLocale = expected[locale as keyof typeof expected]
+      expect(messages.workflow.actions.addNodeResearch, `${locale}.workflow.actions.addNodeResearch`).toBe(expectedForLocale.addNodeResearch)
+      expect(messages.workflow.deterministic, `${locale}.workflow.deterministic`).toEqual({
+        code: expectedForLocale.code,
+        codePlaceholder: expectedForLocale.codePlaceholder,
+        inputPlaceholder: expectedForLocale.inputPlaceholder,
+        configPending: expectedForLocale.configPending,
       })
     }
   })

@@ -2642,7 +2642,7 @@ export default {
     canvasAriaLabel: 'ワークフローキャンバス',
     workspace: { title: 'ワークスペースを選択', select: 'ワークスペースを選択', clear: 'ワークスペースをクリア' },
     actions: {
-      newWorkflow: '新しいワークフロー', addNode: 'ノードを追加', createWorkflowFirst: '先にワークフローを作成してください', reset: 'リセット',
+      newWorkflow: '新しいワークフロー', addNode: 'ノードを追加', addNodeResearch: 'リサーチノードを追加', createWorkflowFirst: '先にワークフローを作成してください', reset: 'リセット',
       startExecution: '実行を開始', executionPending: 'ワークフロー実行はまだ接続されていません', executionStarted: 'ワークフローの実行を開始しました', executionCompleted: 'ワークフローの実行が完了しました', executionFailed: 'ワークフローの実行に失敗しました',
       rerunDownstreamKeepNode: 'このノードを保持して下流を再実行', rerunDownstreamClearNode: 'このノードをクリアして下流を再実行', rerunDownstreamStarted: '下流の再実行を開始しました', rerunFromNodeStarted: 'このノードから再実行を開始しました', rerunFailed: 'ワークフローの再実行に失敗しました',
       deleteNode: 'ノードを削除', deleteEdge: '接続を削除', editEdge: '接続を編集', undo: '元に戻す',
@@ -2801,6 +2801,12 @@ export default {
       validate: '検証',
       render: 'レンダリング',
       unknown: '不明なタイプ',
+    },
+    deterministic: {
+      code: 'コード',
+      codePlaceholder: 'このノードの実行時に Node.js が実行する JavaScript コード',
+      inputPlaceholder: 'スクリプトに渡す任意の入力（省略可）',
+      configPending: 'このノードタイプの設定は今後のバージョンで提供予定です。',
     },
     status: {
       idle: '待機中', queued: '待機列', running: '実行中', pending_approval: '承認待ち', completed: '完了', skipped: 'スキップ', failed: '失敗', approval_rejected: '承認拒否', canceled: 'キャンセル済み',

@@ -1,6 +1,15 @@
 export const WORKFLOW_NODE_TYPES = ['agent', 'script', 'validate', 'render'] as const
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number]
 
+export const WORKFLOW_DETERMINISTIC_NODE_TYPES = ['script', 'validate', 'render'] as const
+export type WorkflowDeterministicNodeType = (typeof WORKFLOW_DETERMINISTIC_NODE_TYPES)[number]
+
+// Agent nodes also carry `input` and `orchestration`, but for deterministic nodes both
+// keys belong to the server script contract and must survive normalize/serialize.
+export const WORKFLOW_DETERMINISTIC_PRESERVED_DATA_KEYS: readonly string[] = ['input', 'orchestration']
+
+export const WORKFLOW_SCRIPT_NODE_RUNTIME = 'node' as const
+
 export const WORKFLOW_AGENT_NODE_DATA_KEYS: readonly string[] = [
   'agent',
   'agentMode',
@@ -31,6 +40,10 @@ export function normalizeWorkflowNodeType(raw: unknown): string {
   return typeof raw === 'string' && raw ? raw : 'agent'
 }
 
+export function isDeterministicWorkflowNodeType(type: unknown): type is WorkflowDeterministicNodeType {
+  return typeof type === 'string' && (WORKFLOW_DETERMINISTIC_NODE_TYPES as readonly string[]).includes(type)
+}
+
 export function stripWorkflowAgentNodeDataFields(data: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(data)) {
@@ -39,6 +52,29 @@ export function stripWorkflowAgentNodeDataFields(data: Record<string, unknown>):
     result[key] = value
   }
   return result
+}
+
+export function stripWorkflowDeterministicNodeDataFields(data: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(data)) {
+    if (WORKFLOW_AGENT_NODE_DATA_KEYS.includes(key) && !WORKFLOW_DETERMINISTIC_PRESERVED_DATA_KEYS.includes(key)) continue
+    if (WORKFLOW_NODE_RUNTIME_DATA_KEYS.includes(key)) continue
+    result[key] = value
+  }
+  return result
+}
+
+export function createDeterministicWorkflowNodeData(type: WorkflowDeterministicNodeType, title: string): Record<string, unknown> {
+  if (type === 'script') {
+    return {
+      title,
+      input: '',
+      orchestration: { join: 'all' },
+      runtime: WORKFLOW_SCRIPT_NODE_RUNTIME,
+      code: '',
+    }
+  }
+  return { title }
 }
 
 export interface WorkflowNodeFrame {
@@ -68,7 +104,7 @@ export function normalizeWorkflowNodeFrame(raw: unknown, index: number): Workflo
 export function normalizeDeterministicWorkflowNodeData(rawData: unknown, title: string): Record<string, unknown> {
   const data = rawData && typeof rawData === 'object' ? rawData as Record<string, unknown> : {}
   return {
-    ...stripWorkflowAgentNodeDataFields(data),
+    ...stripWorkflowDeterministicNodeDataFields(data),
     title,
     status: 'idle' as const,
   }
@@ -84,7 +120,7 @@ export interface WorkflowCanvasNodeSnapshot {
 }
 
 export function serializeDeterministicWorkflowNode(node: WorkflowCanvasNodeSnapshot): Record<string, unknown> {
-  const { title, ...typeFields } = stripWorkflowAgentNodeDataFields(node.data)
+  const { title, ...typeFields } = stripWorkflowDeterministicNodeDataFields(node.data)
   return {
     id: node.id,
     type: node.type,

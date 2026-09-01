@@ -35,10 +35,15 @@ export interface WorkflowAgentNodeData {
 
 export type WorkflowAgentNodeEditableData = Pick<WorkflowAgentNodeData, 'title' | 'agent' | 'agentMode' | 'provider' | 'model' | 'apiMode' | 'reasoningEffort' | 'input' | 'skills' | 'images' | 'approvalRequired' | 'orchestration'>
 
+export type WorkflowDeterministicNodeEditableData = Pick<WorkflowDeterministicNodeData, 'title' | 'code' | 'input'>
+
 export interface WorkflowDeterministicNodeData {
   title: string
+  code?: string
+  input?: string
   status: WorkflowNodeStatus
   statusError?: string | null
   readonly?: boolean
+  onUpdate?: (id: string, patch: Partial<WorkflowDeterministicNodeEditableData>) => void
   [key: string]: unknown
 }

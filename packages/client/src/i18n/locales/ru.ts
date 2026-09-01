@@ -998,6 +998,7 @@ export default {
     actions: {
       newWorkflow: 'Новый workflow',
       addNode: 'Добавить узел',
+      addNodeResearch: 'Добавить исследовательский узел',
       createWorkflowFirst: 'Сначала создайте workflow',
       reset: 'Сбросить',
       startExecution: 'Запустить выполнение',
@@ -1187,6 +1188,12 @@ export default {
       validate: 'Проверка',
       render: 'Рендеринг',
       unknown: 'Неизвестный тип',
+    },
+    deterministic: {
+      code: 'Код',
+      codePlaceholder: 'Код JavaScript, выполняемый Node.js при запуске этого узла',
+      inputPlaceholder: 'Необязательные входные данные, передаваемые скрипту (можно оставить пустым)',
+      configPending: 'Настройка этого типа узла появится в следующей версии.',
     },
     status: {
       idle: 'Бездействует',

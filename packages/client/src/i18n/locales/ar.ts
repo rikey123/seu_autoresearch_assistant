@@ -1119,6 +1119,7 @@ export default {
     actions: {
       newWorkflow: 'مسار عمل جديد',
       addNode: 'إضافة عقدة',
+      addNodeResearch: 'إضافة عقدة بحث',
       createWorkflowFirst: 'يُرجى إنشاء مسار عمل أولاً',
       reset: 'إعادة تعيين',
       startExecution: 'بدء التنفيذ',
@@ -1338,6 +1339,12 @@ export default {
       validate: 'تحقق',
       render: 'عرض',
       unknown: 'نوع غير معروف',
+    },
+    deterministic: {
+      code: 'الشيفرة',
+      codePlaceholder: 'شيفرة JavaScript ينفذها Node.js عند تشغيل هذه العقدة',
+      inputPlaceholder: 'مدخل اختياري يُمرَّر إلى السكربت (يمكن تركه فارغًا)',
+      configPending: 'سيتم توفير إعدادات هذا النوع من العقد في إصدار لاحق.',
     },
     status: {
       idle: 'خامل',

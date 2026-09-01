@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Handle, Position, type NodeProps } from '@vue-flow/core'
+import { NInput } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import type { WorkflowDeterministicNodeData } from './types'
+import type { WorkflowDeterministicNodeData, WorkflowDeterministicNodeEditableData } from './types'
 
 const props = defineProps<NodeProps<WorkflowDeterministicNodeData>>()
 const { t } = useI18n()
@@ -15,6 +16,16 @@ const typeLabel = computed(() => {
   if (props.type === 'render') return t('workflow.nodeType.render')
   return t('workflow.nodeType.unknown')
 })
+const isScript = computed(() => props.type === 'script')
+const isReadonly = computed(() => props.data.readonly === true)
+
+function updateField(key: keyof WorkflowDeterministicNodeEditableData, value: string) {
+  props.data.onUpdate?.(props.id, { [key]: value } as Partial<WorkflowDeterministicNodeEditableData>)
+}
+
+function handleControlEvent(event: Event) {
+  if (!props.data.readonly) event.stopPropagation()
+}
 </script>
 
 <template>
@@ -27,12 +38,56 @@ const typeLabel = computed(() => {
         <span class="node-status-dot" />
         <span class="node-status-label">{{ statusLabel }}</span>
       </span>
-      <span class="node-readonly-badge">{{ t('workflow.node.readonlyBadge') }}</span>
+      <span v-if="isReadonly" class="node-readonly-badge">{{ t('workflow.node.readonlyBadge') }}</span>
     </div>
 
-    <div class="node-body">
+    <div
+      class="node-body nodrag nopan"
+      @click="handleControlEvent"
+      @pointerdown="handleControlEvent"
+      @pointerup="handleControlEvent"
+      @mousedown="handleControlEvent"
+      @mouseup="handleControlEvent"
+      @touchstart="handleControlEvent"
+      @touchend="handleControlEvent"
+    >
       <span class="node-type-label">{{ typeLabel }}</span>
-      <span class="node-title" :title="data.title">{{ data.title }}</span>
+      <NInput
+        class="node-title-input"
+        :value="data.title"
+        size="small"
+        :disabled="isReadonly"
+        :placeholder="t('workflow.node.title')"
+        @update:value="value => updateField('title', value)"
+      />
+      <template v-if="isScript">
+        <span class="node-field-label">{{ t('workflow.deterministic.code') }}</span>
+        <NInput
+          class="node-code-input"
+          :value="typeof data.code === 'string' ? data.code : ''"
+          type="textarea"
+          size="small"
+          :resizable="false"
+          :disabled="isReadonly"
+          :autosize="{ minRows: 4, maxRows: 14 }"
+          :input-props="{ spellcheck: false }"
+          :placeholder="t('workflow.deterministic.codePlaceholder')"
+          @update:value="value => updateField('code', value)"
+        />
+        <span class="node-field-label">{{ t('workflow.node.input') }}</span>
+        <NInput
+          class="node-input-input"
+          :value="typeof data.input === 'string' ? data.input : ''"
+          type="textarea"
+          size="small"
+          :resizable="false"
+          :disabled="isReadonly"
+          :autosize="{ minRows: 2, maxRows: 8 }"
+          :placeholder="t('workflow.deterministic.inputPlaceholder')"
+          @update:value="value => updateField('input', value)"
+        />
+      </template>
+      <p v-else class="node-config-pending">{{ t('workflow.deterministic.configPending') }}</p>
     </div>
 
     <Handle id="output" type="source" :position="Position.Right" class="workflow-handle output-handle" />
@@ -46,8 +101,8 @@ const typeLabel = computed(() => {
 .workflow-deterministic-node {
   width: 100%;
   height: 100%;
-  min-width: 160px;
-  min-height: 72px;
+  min-width: 240px;
+  min-height: 120px;
   border: 1px dashed $border-color;
   border-radius: 8px;
   background: $bg-card;
@@ -155,10 +210,11 @@ const typeLabel = computed(() => {
 .node-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   padding: 12px;
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
 }
 
 .node-type-label {
@@ -173,10 +229,59 @@ const typeLabel = computed(() => {
   text-transform: uppercase;
 }
 
-.node-title {
-  font-size: 13px;
+.node-field-label {
+  color: $text-secondary;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
+}
+
+.node-code-input {
+  :deep(.n-input__textarea-el) {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+}
+
+.node-config-pending {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed $border-color;
+  border-radius: 6px;
+  background: $bg-secondary;
+  color: $text-secondary;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workflow-handle {
+  width: 16px;
+  height: 16px;
+  border: 2px solid $bg-card;
+  background: var(--accent-info);
+  opacity: 0.36;
+  transition: opacity $transition-fast, transform $transition-fast, box-shadow $transition-fast;
+}
+
+.workflow-deterministic-node:hover .workflow-handle,
+.workflow-deterministic-node.selected .workflow-handle {
+  opacity: 1;
+  box-shadow: 0 0 0 3px rgba(var(--accent-info-rgb), 0.14);
+}
+
+.input-handle {
+  left: -9px;
+}
+
+.output-handle {
+  right: -9px;
+}
+
+.top-handle {
+  top: -9px;
+}
+
+.bottom-handle {
+  bottom: -9px;
 }
 </style>
