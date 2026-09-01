@@ -38,8 +38,8 @@ should not duplicate server persistence rules.
 ## Server Structure
 
 Server code is separated by business ownership under `modules/studio`,
-`modules/hermes`, `modules/ekko`, and `modules/coding-agents`; concrete module
-composition belongs in `bootstrap`.
+`modules/research`, `modules/hermes`, `modules/ekko`, and
+`modules/coding-agents`; concrete module composition belongs in `bootstrap`.
 See `docs/harness/server-module-boundaries.md` for the complete target tree,
 ownership decisions, allowed dependency matrix, and migration rules.
 
