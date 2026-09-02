@@ -148,6 +148,30 @@ export function getPaperByName(name: string): PaperRecord | null {
   return findPaperByName(name)
 }
 
+// The internal filesystem location is a server implementation detail: the
+// streaming endpoints resolve it from the persisted row, and no JSON response
+// may leak the absolute path. The client PaperRecord type already omits it.
+export type PaperView = Omit<PaperRecord, 'file_path'>
+
+export function paperView(record: PaperRecord): PaperView {
+  const { file_path: _filePath, ...view } = record
+  return view
+}
+
+export function listPaperViews(filter: PaperListFilter = {}): PaperView[] {
+  return listPapers(filter).map(paperView)
+}
+
+export function getPaperView(id: string): PaperView | null {
+  const record = findPaperById(id)
+  return record ? paperView(record) : null
+}
+
+export function getPaperViewByName(name: string): PaperView | null {
+  const record = findPaperByName(name)
+  return record ? paperView(record) : null
+}
+
 export function deletePaper(id: string): boolean {
   const removed = removePaper(id)
   if (!removed) return false

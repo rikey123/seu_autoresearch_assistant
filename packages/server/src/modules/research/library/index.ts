@@ -14,7 +14,10 @@ libraryRoutes.get('/api/studio/research/library/papers', paper.list)
 libraryRoutes.get('/api/studio/research/library/papers/by-name/:name', paper.getByName)
 // Streaming endpoints: single HTTP byte ranges let the browser's native PDF
 // viewer fetch only the chunks it needs, so large PDFs open progressively.
+// HEAD (by id and by name) advertises Content-Length/Accept-Ranges without
+// opening a read stream.
 libraryRoutes.get('/api/studio/research/library/papers/by-name/:name/file', paper.streamFileByName)
+libraryRoutes.head('/api/studio/research/library/papers/by-name/:name/file', paper.streamFileByName)
 libraryRoutes.get('/api/studio/research/library/papers/:id', paper.get)
 libraryRoutes.patch('/api/studio/research/library/papers/:id', paper.update)
 libraryRoutes.del('/api/studio/research/library/papers/:id', paper.remove)

@@ -65,7 +65,7 @@ function reload(): void {
 .pdf-reload {
   position: absolute;
   top: 8px;
-  right: 8px;
+  inset-inline-end: 8px;
   z-index: 1;
   padding: 4px 10px;
   font-size: 12px;

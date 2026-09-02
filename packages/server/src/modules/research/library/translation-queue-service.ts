@@ -112,6 +112,17 @@ export function enqueueTranslationJob(input: TranslationJobInput): TranslationJo
   const targetLang = String(input.targetLang || '').trim() || DEFAULT_TARGET_LANG
   const service = String(input.service || '').trim() || DEFAULT_SERVICE
   const outDir = String(input.outDir || '').trim() || join(dirname(pdfPath), 'paper-translate-out')
+  // outDir is deliberately NOT locked into appHome/research: the queue is a
+  // general-purpose local facility whose source PDF is a caller-chosen
+  // absolute path anywhere on the machine (mirroring the T2.2 paper-translate
+  // template, which derives outDir from the PDF's directory). An appHome
+  // whitelist would break translating PDFs outside the research state dir, so
+  // the surface is tightened to the part that cannot be silent: relative paths
+  // are rejected outright — products are returned through the job record, and
+  // pdf2zh creates the output directory itself, so it need not pre-exist.
+  if (!isAbsolute(outDir)) {
+    throw new TranslationJobError(`outDir must be an absolute path, received: ${outDir}`)
+  }
   const job = insertTranslationJob({
     pdf_path: pdfPath,
     file_name: basename(pdfPath),
@@ -161,20 +172,46 @@ export function listTranslationJobViews(status?: TranslationJobStatus): Array<Re
 let workerActive = false
 let activeChild: ChildProcess | null = null
 let workerStopped = false
-let exitHookInstalled = false
+
+// The exit hook is installed on `process` at most once per process, not per
+// module load: tests (and host reloads) re-import this module through
+// vi.resetModules(), and a fresh `process.once('exit')` listener on every load
+// accumulated listeners until the MaxListeners warning. The shared state on
+// globalThis survives module reloads, so a reloaded module still picks up the
+// child spawned before it.
+interface TranslationQueueExitHook {
+  installed: boolean
+  child: ChildProcess | null
+}
+
+const EXIT_HOOK_STATE_KEY = '__translationQueueExitHook__'
+const exitHookState: TranslationQueueExitHook = (
+  (globalThis as unknown as Record<string, TranslationQueueExitHook | undefined>)[EXIT_HOOK_STATE_KEY]
+) ?? { installed: false, child: null }
+;(globalThis as unknown as Record<string, TranslationQueueExitHook>)[EXIT_HOOK_STATE_KEY] = exitHookState
 
 function installExitHook(): void {
-  if (exitHookInstalled) return
-  exitHookInstalled = true
-  // Best-effort cleanup: never leave a pdf2zh child behind when the server
-  // process exits while a job is running.
-  process.once('exit', () => {
-    try {
-      activeChild?.kill('SIGKILL')
-    } catch {
-      // already gone
-    }
-  })
+  if (exitHookState.installed) return
+  exitHookState.installed = true
+  process.once('exit', () => translationQueueExitCleanup())
+}
+
+/**
+ * Best-effort cleanup for process exit: never leave a pdf2zh child behind when
+ * the server exits while a job is running. The single-owned-process-tree rule
+ * (same as the workflow engines) runs through the studio process-tree facade,
+ * so a Windows taskkill /T /F takes down any grandchildren, not just the
+ * direct child. Also exported so tests and the shutdown path can exercise the
+ * exact same cleanup the exit hook runs.
+ */
+export function translationQueueExitCleanup(): void {
+  const child = exitHookState.child
+  if (!child) return
+  try {
+    killOwnedProcessTree(child.pid, () => child.kill('SIGKILL'))
+  } catch {
+    // already gone
+  }
 }
 
 function kickWorker(): void {
@@ -235,6 +272,7 @@ function runPdf2zhChild(job: TranslationJobRecord): Promise<SpawnOutcome> {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     activeChild = child
+    exitHookState.child = child
     let stdoutText = ''
     let stderrText = ''
     let timedOut = false
@@ -249,7 +287,10 @@ function runPdf2zhChild(job: TranslationJobRecord): Promise<SpawnOutcome> {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      if (activeChild === child) activeChild = null
+      if (activeChild === child) {
+        activeChild = null
+        if (exitHookState.child === child) exitHookState.child = null
+      }
       resolve({ code, stdout: stdoutText, stderr: stderrText, timedOut })
     }
 
@@ -383,6 +424,7 @@ export function stopTranslationQueueWorker(): void {
   workerStopped = true
   if (activeChild) {
     killOwnedProcessTree(activeChild.pid, () => activeChild?.kill('SIGKILL'))
+    if (exitHookState.child === activeChild) exitHookState.child = null
     activeChild = null
   }
   closeTranslationQueueDb()

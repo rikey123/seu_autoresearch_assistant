@@ -125,7 +125,7 @@ export async function create(ctx: Context) {
       tags: upload.fields.tags,
     })
     ctx.status = 201
-    ctx.body = { paper }
+    ctx.body = { paper: svc.paperView(paper) }
   } catch (err) {
     rejectBadRequest(ctx, err)
   }
@@ -134,7 +134,7 @@ export async function create(ctx: Context) {
 export async function list(ctx: Context) {
   const tag = firstQueryValue(ctx.query.tag as string | string[] | undefined)?.trim() || undefined
   try {
-    ctx.body = { papers: svc.listPapers({ tag }) }
+    ctx.body = { papers: svc.listPaperViews({ tag }) }
   } catch (err) {
     rejectBadRequest(ctx, err)
   }
@@ -143,7 +143,7 @@ export async function list(ctx: Context) {
 export async function get(ctx: Context) {
   const id = requiredId(ctx)
   if (!id) return
-  const paper = svc.getPaper(id)
+  const paper = svc.getPaperView(id)
   if (!paper) {
     ctx.status = 404
     ctx.body = { error: 'paper not found' }
@@ -159,7 +159,7 @@ export async function getByName(ctx: Context) {
     ctx.body = { error: 'name is required' }
     return
   }
-  const paper = svc.getPaperByName(name)
+  const paper = svc.getPaperViewByName(name)
   if (!paper) {
     ctx.status = 404
     ctx.body = { error: 'paper not found' }
@@ -179,7 +179,7 @@ export async function update(ctx: Context) {
       ctx.body = { error: 'paper not found' }
       return
     }
-    ctx.body = { paper }
+    ctx.body = { paper: svc.paperView(paper) }
   } catch (err) {
     rejectBadRequest(ctx, err)
   }
@@ -212,7 +212,10 @@ function parseRangeHeader(header: string, size: number): ByteRange | null | 'uns
   if (rawStart === '' && rawEnd === '') return null
   if (rawStart === '') {
     const suffixLength = Number(rawEnd)
-    if (suffixLength === 0) return 'unsatisfiable'
+    // RFC 7233: a suffix range over a zero-length representation can never
+    // be satisfied; without this guard the read stream would open with
+    // {start: 0, end: -1} and throw ERR_OUT_OF_RANGE (HTTP 500).
+    if (suffixLength === 0 || size === 0) return 'unsatisfiable'
     return { start: Math.max(0, size - suffixLength), end: size - 1 }
   }
   const start = Number(rawStart)
@@ -266,6 +269,16 @@ async function streamPaperFile(ctx: Context, paper: PaperRecord): Promise<void> 
   ctx.set('Accept-Ranges', 'bytes')
   ctx.set('Content-Type', 'application/pdf')
   ctx.set('Content-Disposition', contentDispositionInline(paper.original_name || paper.title))
+
+  // HEAD must only fill metadata: Koa never consumes the response body for
+  // HEAD, so a createReadStream would hold its file descriptor until the next
+  // GC pass. The browser PDF viewer probes the size through HEAD before
+  // requesting the ranges it needs.
+  if (ctx.method === 'HEAD') {
+    ctx.status = 200
+    ctx.set('Content-Length', String(size))
+    return
+  }
 
   const rangeHeader = ctx.get('range')
   if (rangeHeader) {

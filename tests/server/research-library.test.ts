@@ -1,4 +1,4 @@
-import { mkdtempSync, existsSync, rmSync, unlinkSync } from 'node:fs'
+import { mkdtempSync, existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -162,8 +162,13 @@ describe('research paper library', () => {
       tags: ['transformers', 'attention'],
     })
     expect(paper.id).toBeTruthy()
-    expect(existsSync(paper.file_path)).toBe(true)
-    expect(paper.file_path.startsWith(join(home, 'research', 'papers'))).toBe(true)
+    // The internal absolute path is never part of the JSON contract; it stays
+    // in the persisted row for the streaming/delete resolution paths.
+    expect(paper.file_path).toBeUndefined()
+    const stored = store.getPaper(paper.id)
+    expect(stored).toBeTruthy()
+    expect(existsSync(stored!.file_path)).toBe(true)
+    expect(stored!.file_path.startsWith(join(home, 'research', 'papers'))).toBe(true)
     expect(paper.file_size).toBe(MINIMAL_PDF.length)
     expect(paper.created_at).toBeGreaterThan(0)
   })
@@ -283,7 +288,7 @@ describe('research paper library', () => {
   it('deletes a paper together with its stored file', async () => {
     const created = await uploadPaper({ fields: { title: 'Doomed paper' } })
     const id = created.body.paper.id
-    const filePath: string = created.body.paper.file_path
+    const filePath: string = store.getPaper(id)!.file_path
     expect(existsSync(filePath)).toBe(true)
 
     const deleted = await dispatch('DELETE', `/api/studio/research/library/papers/${id}`)
@@ -353,12 +358,16 @@ describe('research paper library', () => {
     expect(multiRange.status).toBe(200)
     expect(await drainBodyEquals(multiRange, payload)).toBe(true)
 
-    // HEAD advertises the same streaming metadata; drain the underlying body
-    // so the open file handle is released before the temp dir is removed.
+    // HEAD advertises the same streaming metadata and must NOT open a read
+    // stream: Koa never consumes a HEAD body, so a createReadStream would
+    // hold its file descriptor until the next GC pass.
     const head = await dispatch('HEAD', fileUrl)
+    expect(head.status).toBe(200)
     expect(head.headers['accept-ranges']).toBe('bytes')
     expect(head.headers['content-type']).toBe('application/pdf')
-    await drainBody(head)
+    expect(head.headers['content-disposition']).toContain('inline')
+    expect(Number(head.headers['content-length'])).toBe(payload.length)
+    expect(head.body).toBeUndefined()
   }, 20000)
 
   it('reports 404 for the streaming endpoint when the paper or file is missing', async () => {
@@ -367,12 +376,88 @@ describe('research paper library', () => {
     expect(missingPaper.body).toEqual({ error: 'paper not found' })
 
     const created = await uploadPaper({ fields: { title: 'Ghost file' } })
-    const filePath: string = created.body.paper.file_path
+    const filePath: string = store.getPaper(created.body.paper.id)!.file_path
     unlinkSync(filePath)
 
     const missingFile = await dispatch('GET', `/api/studio/research/library/papers/${created.body.paper.id}/file`)
     expect(missingFile.status).toBe(404)
     expect(missingFile.body).toEqual({ error: 'paper file not found' })
+  })
+
+  it('answers HEAD for by-name file streaming with metadata only', async () => {
+    const created = await uploadPaper({ file: { name: 'head-me.pdf', data: MINIMAL_PDF } })
+    const fileUrl = `/api/studio/research/library/papers/by-name/${encodeURIComponent('head-me.pdf')}/file`
+
+    const head = await dispatch('HEAD', fileUrl)
+    expect(head.status).toBe(200)
+    expect(head.headers['accept-ranges']).toBe('bytes')
+    expect(head.headers['content-type']).toBe('application/pdf')
+    expect(Number(head.headers['content-length'])).toBe(MINIMAL_PDF.length)
+    expect(head.body).toBeUndefined()
+
+    const missing = await dispatch('HEAD', '/api/studio/research/library/papers/by-name/unknown.pdf/file')
+    expect(missing.status).toBe(404)
+    expect(missing.body).toEqual({ error: 'paper not found' })
+  })
+
+  it('serves zero-byte files as an empty 200 and rejects suffix ranges with 416', async () => {
+    const fileDir = join(home, 'research', 'papers')
+    mkdirSync(fileDir, { recursive: true })
+    const filePath = join(fileDir, 'empty.pdf')
+    writeFileSync(filePath, Buffer.alloc(0))
+    const record = store.createPaper({ title: 'Empty paper', file_path: filePath, file_size: 0 })
+    const fileUrl = `/api/studio/research/library/papers/${record.id}/file`
+
+    const full = await dispatch('GET', fileUrl)
+    expect(full.status).toBe(200)
+    expect(Number(full.length)).toBe(0)
+    expect(await drainBody(full)).toEqual(Buffer.alloc(0))
+
+    // A suffix range over a zero-length representation can never be satisfied
+    // (RFC 7233); without the guard createReadStream would throw
+    // ERR_OUT_OF_RANGE (HTTP 500).
+    for (const range of ['bytes=-5', 'bytes=-0', 'bytes=0-', 'bytes=0-9']) {
+      const partial = await dispatch('GET', fileUrl, { headers: { range } })
+      expect(partial.status).toBe(416)
+      expect(partial.headers['content-range']).toBe('bytes */0')
+    }
+  })
+
+  it('never leaks the internal file_path in any JSON response', async () => {
+    const created = await uploadPaper({
+      fields: { title: 'Shape paper', authors: 'A', year: '2024', venue: 'Test', tags: 'x' },
+    })
+    expect(created.status).toBe(201)
+    const views: Array<Record<string, unknown>> = [created.body.paper]
+
+    const all = await dispatch('GET', '/api/studio/research/library/papers')
+    views.push(...all.body.papers)
+    const detail = await dispatch('GET', `/api/studio/research/library/papers/${created.body.paper.id}`)
+    views.push(detail.body.paper)
+    const patched = await dispatch('PATCH', `/api/studio/research/library/papers/${created.body.paper.id}`, {
+      request: { body: { venue: 'NeurIPS' } },
+    })
+    expect(patched.status).toBe(200)
+    views.push(patched.body.paper)
+
+    for (const view of views) {
+      expect(view).toMatchObject({
+        title: 'Shape paper',
+        original_name: 'paper.pdf',
+        authors: ['A'],
+        year: 2024,
+        venue: expect.any(String),
+        tags: ['x'],
+        file_size: expect.any(Number),
+        created_at: expect.any(Number),
+        updated_at: expect.any(Number),
+      })
+      expect(view).not.toHaveProperty('file_path')
+    }
+
+    // The server-side store still carries the path for streaming and delete.
+    const stored = store.getPaper(created.body.paper.id)
+    expect(stored?.file_path).toBeTruthy()
   })
 
   it('keeps the health probe untouched', async () => {
