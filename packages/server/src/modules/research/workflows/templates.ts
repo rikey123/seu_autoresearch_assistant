@@ -255,6 +255,7 @@ process.stdin.on('data', function (chunk) { rawInput += chunk; });
 process.stdin.on('end', function () {
   var fs = require('node:fs');
   var path = require('node:path');
+  var os = require('node:os');
   var payload = parseJsonPayload(stripEngineWrapperLines(rawInput));
   if (!payload || typeof payload.pdfPath !== 'string' || typeof payload.monoPath !== 'string' || typeof payload.dualPath !== 'string') {
     console.error('bilingual node expects JSON {"pdfPath","monoPath","dualPath"} from the translate node');
@@ -270,24 +271,72 @@ process.stdin.on('end', function () {
   function escapeHtml(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+  // Legacy embed: only used as an explicit fallback (see embedMode below);
+  // browsers block file:// iframes on http origins, so the server-proxied URL
+  // is the primary embed whenever a token can be resolved.
   function toFileUri(filePath) {
     return 'file:///' + filePath.replace(/\\/g, '/').replace(/^\/+/, '');
   }
+  // The bilingual page is a local research artifact rendered by the user's own
+  // machine. Embedding through the server's run-files endpoint needs the same
+  // credential the user already holds: the Studio auth token. It is resolved
+  // from the server environment (AUTH_TOKEN or the token file under the Web UI
+  // home) exactly like the repo-standard "token" query parameter download
+  // pattern, and it only ever authorizes the local browser to read local run
+  // artifacts — it is never transmitted to a third party.
+  // PAPER_TRANSLATE_BILINGUAL_EMBED=file forces the legacy file:// embed back
+  // on (offline machine-local viewing).
+  function resolveEmbedToken() {
+    var fromEnv = String(process.env.AUTH_TOKEN || '').trim();
+    if (fromEnv) return fromEnv;
+    var home = String(process.env.HERMES_WEB_UI_HOME || '').trim()
+      || String(process.env.HERMES_WEBUI_STATE_DIR || '').trim()
+      || path.join(os.homedir(), '.hermes-web-ui');
+    try {
+      var token = fs.readFileSync(path.join(home, '.token'), 'utf8');
+      return token.trim();
+    } catch (error) {
+      return '';
+    }
+  }
+  function serverBaseUrl() {
+    var port = Number(process.env.PORT);
+    if (!Number.isFinite(port) || port <= 0) port = 8648;
+    return 'http://127.0.0.1:' + port;
+  }
+  function toProxyUrl(filePath, token) {
+    return serverBaseUrl() + '/api/studio/research/run-files?path=' + encodeURIComponent(filePath)
+      + '&token=' + encodeURIComponent(token);
+  }
+  var embedMode = String(process.env.PAPER_TRANSLATE_BILINGUAL_EMBED || '').trim().toLowerCase();
+  var embedToken = embedMode === 'file' ? '' : resolveEmbedToken();
   function pane(label, filePath) {
-    return '<section><h2>' + escapeHtml(label) + '</h2><iframe src="' + toFileUri(filePath)
-      + '" style="width:100%;height:78vh;border:1px solid #d7dde8;border-radius:8px;"></iframe></section>';
+    var embed = embedToken
+      ? toProxyUrl(filePath, embedToken)
+      : toFileUri(filePath);
+    return '<section><h2>' + escapeHtml(label) + '</h2><iframe src="' + escapeHtml(embed)
+      + '" style="width:100%;height:78vh;border:1px solid #d7dde8;border-radius:8px;"></iframe>'
+      + '<p class="fallback">本地路径回退：<code>' + escapeHtml(filePath) + '</code></p></section>';
   }
   var fileName = path.basename(payload.pdfPath);
+  var dualEmbed = embedToken ? toProxyUrl(payload.dualPath, embedToken) : '';
+  var dualNote = dualEmbed
+    ? '<p>交错双语版（逐页对照）：<a href="' + escapeHtml(dualEmbed) + '">经服务端打开</a> 或 <code>' + escapeHtml(payload.dualPath) + '</code></p>'
+    : '<p>交错双语版（逐页对照）：<code>' + escapeHtml(payload.dualPath) + '</code></p>';
   var html = '<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8" />\n<title>'
-    + escapeHtml(fileName) + ' 双语对照</title>\n<style>\n'
+    + escapeHtml(fileName) + ' 双语对照</title>\n'
+    + '<!-- 本页为本地科研产物（工作流运行生成）。PDF 经本机服务端 run-files 端点流式内嵌：'
+    + 'URL 中的 token 是本机用户自身的访问凭据，仅授权本机浏览器读取本机运行产物，不向第三方传输。 -->\n'
+    + '<style>\n'
     + 'body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 24px; color: #1f2430; }\n'
     + 'h1 { font-size: 20px; }\n'
     + '.panes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }\n'
+    + '.fallback { color: #6b7280; font-size: 12px; }\n'
     + '@media (max-width: 1100px) { .panes { grid-template-columns: 1fr; } }\n'
     + '</style>\n</head>\n<body>\n'
     + '<h1>' + escapeHtml(fileName) + ' 双语对照</h1>\n'
     + '<div class="panes">\n' + pane('原文', payload.pdfPath) + '\n' + pane('译文', payload.monoPath) + '\n</div>\n'
-    + '<p>交错双语版（逐页对照）：<code>' + escapeHtml(payload.dualPath) + '</code></p>\n'
+    + dualNote + '\n'
     + '</body>\n</html>';
   var htmlPath = path.join(path.dirname(payload.pdfPath), 'paper-bilingual.html');
   fs.writeFileSync(htmlPath, html, 'utf8');
@@ -296,6 +345,7 @@ process.stdin.on('end', function () {
     original: payload.pdfPath,
     translated: payload.monoPath,
     dual: payload.dualPath,
+    embed: embedToken ? 'server-proxy' : 'file-uri-fallback',
   }));
 });`
 

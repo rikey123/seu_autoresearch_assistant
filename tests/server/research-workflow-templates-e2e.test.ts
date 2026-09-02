@@ -14,6 +14,7 @@ const originalE2eWebUiHome = process.env.HERMES_WEB_UI_HOME
 const originalE2eStateDir = process.env.HERMES_WEBUI_STATE_DIR
 const originalE2eApiKey = process.env.OPENAI_API_KEY
 const originalE2ePdf2zhBin = process.env.PAPER_TRANSLATE_PDF2ZH_BIN
+const originalE2eAuthToken = process.env.AUTH_TOKEN
 const e2eTestRoot = mkdtempSync(join(tmpdir(), 'research-workflow-templates-e2e-'))
 const e2eTestDbDir = join(e2eTestRoot, 'db')
 const e2eTestHome = join(e2eTestRoot, 'home')
@@ -201,6 +202,7 @@ afterAll(async () => {
   restoreEnvironmentVariable('HERMES_WEBUI_STATE_DIR', originalE2eStateDir)
   restoreEnvironmentVariable('OPENAI_API_KEY', originalE2eApiKey)
   restoreEnvironmentVariable('PAPER_TRANSLATE_PDF2ZH_BIN', originalE2ePdf2zhBin)
+  restoreEnvironmentVariable('AUTH_TOKEN', originalE2eAuthToken)
   rmSync(e2eTestRoot, { recursive: true, force: true })
 })
 
@@ -262,12 +264,16 @@ describe('research workflow template end-to-end runs (real engine)', () => {
     // translate node spawns this Node wrapper script with pdf2zh's argv
     // contract through PAPER_TRANSLATE_PDF2ZH_BIN. The OPENAI_API_KEY gate is
     // satisfied with a fake key — no real translation endpoint is contacted.
+    // AUTH_TOKEN gives the bilingual node the server credential it embeds in
+    // the run-files proxy URLs (the script subprocess inherits the server
+    // environment, exactly like in production).
     const stubDir = join(e2eTestRoot, 'pdf2zh-stub')
     mkdirSync(stubDir, { recursive: true })
     const pdf2zhStubPath = join(stubDir, 'pdf2zh-stub.js')
     writeFileSync(pdf2zhStubPath, PDF2ZH_STUB_CODE, 'utf8')
     process.env.OPENAI_API_KEY = 'test-only-openai-key'
     process.env.PAPER_TRANSLATE_PDF2ZH_BIN = pdf2zhStubPath
+    process.env.AUTH_TOKEN = 'e2e-run-file-proxy-token'
 
     // Template instantiation; the entry node's authored input is the PDF path,
     // exactly like a user filling in the workflow before pressing run.
@@ -316,12 +322,33 @@ describe('research workflow template end-to-end runs (real engine)', () => {
     const bilingual = parseNodeOutput(nodeRow(result, 'pt-bilingual'))
     const bilingualHtmlPath = String(bilingual.bilingualHtmlPath)
     expect(existsSync(bilingualHtmlPath)).toBe(true)
+    expect(bilingual.embed).toBe('server-proxy')
     const bilingualHtml = readFileSync(bilingualHtmlPath, 'utf8')
     expect(bilingualHtml).toContain('demo-paper.pdf 双语对照')
-    // The iframe src embeds the translated PDF as a file URI (known limitation:
-    // blocked on http origins); the dual PDF is referenced as a plain path.
-    const monoUri = 'file:///' + String(translate.monoPath).replace(/\\/g, '/').replace(/^\/+/, '')
-    expect(bilingualHtml).toContain(monoUri)
+
+    // The page must NOT embed file:/// URIs (blocked on http origins); every
+    // pane streams through the run-files proxy endpoint instead, with the
+    // path query parameter carrying the exact generation-time file path.
+    expect(bilingualHtml).not.toContain('file:///')
+    expect(bilingualHtml).toContain('/api/studio/research/run-files?path=')
+    const embeddedTargets = decodeRunFileProxyTargets(bilingualHtml)
+    expect(embeddedTargets).toContain(String(translate.monoPath))
+    expect(embeddedTargets).toContain(pdfPath)
+    // The embed URLs authenticate with the same ?token= pattern as the
+    // repository's download routes, using the server-provided credential.
+    expect(bilingualHtml).toContain(encodeURIComponent('e2e-run-file-proxy-token'))
+    // The dual PDF stays reachable: server URL link plus the local path text.
     expect(bilingualHtml).toContain(String(translate.dualPath))
+    expect(embeddedTargets).toContain(String(translate.dualPath))
   }, 60000)
 })
+
+/** Extracts and URL-decodes every `path` parameter of proxy embed URLs. */
+function decodeRunFileProxyTargets(html: string): string[] {
+  const targets: string[] = []
+  const pattern = /\/api\/studio\/research\/run-files\?path=([^&"']+)/g
+  for (const match of html.matchAll(pattern)) {
+    targets.push(decodeURIComponent(match[1]))
+  }
+  return targets
+}
