@@ -22,7 +22,8 @@ const subtitle = computed(() => t(`research.sections.${props.section}.subtitle`)
     </header>
     <ResearchTabNav />
     <div class="research-content">
-      <section class="research-placeholder">
+      <slot name="content">
+        <section class="research-placeholder">
         <svg
           width="32"
           height="32"
@@ -41,6 +42,7 @@ const subtitle = computed(() => t(`research.sections.${props.section}.subtitle`)
         <p class="placeholder-title">{{ t('research.placeholderTitle') }}</p>
         <p class="placeholder-text">{{ t('research.placeholderText') }}</p>
       </section>
+      </slot>
     </div>
   </div>
 </template>

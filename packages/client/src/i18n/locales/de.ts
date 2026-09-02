@@ -403,6 +403,53 @@ export default {
     collapse: 'Menü einklappen',
   },
 
+  research: {
+    workbench: 'Forschungsarbeitbereich',
+    placeholderTitle: 'Modul im Aufbau',
+    placeholderText: 'Dieses Modul ist Teil der Forschungsarbeitbereich-Oberfläche. Seine Funktionen werden in einer kommenden Version ausgeliefert.',
+    sections: {
+      workflows: {
+        title: 'Workflows',
+        subtitle: 'Forschungsworkflows entwerfen, orchestrieren und ausführen.',
+      },
+      papers: {
+        title: 'Literatur',
+        subtitle: 'Forschungsliteratur durchsuchen, organisieren und annotieren.',
+      },
+      latex: {
+        title: 'LaTeX',
+        subtitle: 'LaTeX-Manuskripte schreiben, voranschauen und kompilieren.',
+      },
+      knowledge: {
+        title: 'Wissen',
+        subtitle: 'Ihre Forschungswissensbasis aufbauen und abfragen.',
+      },
+      artifacts: {
+        title: 'Artefakte',
+        subtitle: 'Abbildungen, Datensätze und andere Forschungsergebnisse durchsehen.',
+      }
+    },
+    papers: {
+      upload: 'PDF importieren',
+      loading: 'Literatur wird geladen…',
+      loadFailed: 'Die Literaturbibliothek konnte nicht geladen werden.',
+      retry: 'Erneut versuchen',
+      empty: 'Noch keine Literatur',
+      untitled: 'Ohne Titel',
+      delete: 'Löschen',
+      deleteConfirm: 'Löschen',
+      cancel: 'Abbrechen',
+      deleteConfirmText: '„{name}" aus der Bibliothek löschen? Die gespeicherte PDF-Datei wird entfernt.',
+      deleteFailed: 'Die Literatur konnte nicht gelöscht werden.',
+      deleteSuccess: 'Literatur gelöscht.',
+      uploadFailed: 'Import fehlgeschlagen. Nur PDF-Dateien werden unterstützt.',
+      uploadSuccess: 'Literatur importiert.',
+      backToList: 'Zurück zur Übersicht',
+      previewFrame: 'PDF-Vorschau',
+      reload: 'Neu laden',
+    },
+  },
+
   agentManager: {
     title: 'Agent-Verwaltung',
     subtitle: 'Verfügbare Agents auf diesem Gerät erkennen und verwalten.',

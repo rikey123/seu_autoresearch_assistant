@@ -391,6 +391,53 @@ export default {
     dockerUpdateNote: 'ستبقى بياناتك محفوظة بعد إعادة إنشاء الحاوية.',
   },
 
+  research: {
+    workbench: 'منضدة العمل البحثية',
+    placeholderTitle: 'وحدة قيد الإنشاء',
+    placeholderText: 'هذه الوحدة جزء من هيكل منضدة العمل البحثية. ستتوفر وظائفها في إصدار قادم.',
+    sections: {
+      workflows: {
+        title: 'سير العمل',
+        subtitle: 'صمّم ورتّب وشغّل تدفقات بحثية مؤتمتة.',
+      },
+      papers: {
+        title: 'الأدبيات',
+        subtitle: 'ابحث في الأدبيات البحثية ونظّمها وأضف تعليقات توضيحية عليها.',
+      },
+      latex: {
+        title: 'LaTeX',
+        subtitle: 'اكتب وعاين وجمّع مخطوطات LaTeX.',
+      },
+      knowledge: {
+        title: 'المعرفة',
+        subtitle: 'أنشئ قاعدة معرفتك البحثية واستعلم منها.',
+      },
+      artifacts: {
+        title: 'المخرجات',
+        subtitle: 'تصفح الأشكال ومجموعات البيانات وغيرها من مخرجات البحث.',
+      }
+    },
+    papers: {
+      upload: 'استيراد PDF',
+      loading: 'جارٍ تحميل الأدبيات…',
+      loadFailed: 'تعذر تحميل مكتبة الأدبيات.',
+      retry: 'إعادة المحاولة',
+      empty: 'لا توجد أدبيات بعد',
+      untitled: 'بدون عنوان',
+      delete: 'حذف',
+      deleteConfirm: 'حذف',
+      cancel: 'إلغاء',
+      deleteConfirmText: 'حذف "{name}" من المكتبة؟ سيتم إزالة ملف PDF المحفوظ.',
+      deleteFailed: 'تعذر حذف الأدبيات.',
+      deleteSuccess: 'تم حذف الأدبيات.',
+      uploadFailed: 'فشل الاستيراد. تُدعم ملفات PDF فقط.',
+      uploadSuccess: 'تم استيراد الأدبيات.',
+      backToList: 'العودة إلى القائمة',
+      previewFrame: 'معاينة PDF',
+      reload: 'إعادة التحميل',
+    },
+  },
+
   agentManager: {
     title: 'إدارة الوكلاء',
     subtitle: 'اكتشاف الوكلاء المتاحين على هذا الجهاز وإدارتهم.',

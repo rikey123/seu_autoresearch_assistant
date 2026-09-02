@@ -403,6 +403,53 @@ export default {
     collapse: 'Recolher menu',
   },
 
+  research: {
+    workbench: 'Bancada de pesquisa',
+    placeholderTitle: 'Módulo em construção',
+    placeholderText: 'Este módulo faz parte da bancada de pesquisa. Sua funcionalidade será entregue em uma versão futura.',
+    sections: {
+      workflows: {
+        title: 'Fluxos de trabalho',
+        subtitle: 'Projete, orquestre e execute fluxos de pesquisa automatizados.',
+      },
+      papers: {
+        title: 'Literatura',
+        subtitle: 'Pesquise, organize e anote literatura científica.',
+      },
+      latex: {
+        title: 'LaTeX',
+        subtitle: 'Escreva, pré-visualize e compile manuscritos LaTeX.',
+      },
+      knowledge: {
+        title: 'Conhecimento',
+        subtitle: 'Construa e consulte sua base de conhecimento de pesquisa.',
+      },
+      artifacts: {
+        title: 'Artefatos',
+        subtitle: 'Navegue por figuras, conjuntos de dados e outras saídas de pesquisa.',
+      }
+    },
+    papers: {
+      upload: 'Importar PDF',
+      loading: 'Carregando literatura…',
+      loadFailed: 'Não foi possível carregar a biblioteca de literatura.',
+      retry: 'Tentar novamente',
+      empty: 'Nenhuma literatura ainda',
+      untitled: 'Sem título',
+      delete: 'Excluir',
+      deleteConfirm: 'Excluir',
+      cancel: 'Cancelar',
+      deleteConfirmText: 'Excluir "{name}" da biblioteca? O PDF armazenado será removido.',
+      deleteFailed: 'Não foi possível excluir a literatura.',
+      deleteSuccess: 'Literatura excluída.',
+      uploadFailed: 'Falha na importação. Apenas arquivos PDF são aceitos.',
+      uploadSuccess: 'Literatura importada.',
+      backToList: 'Voltar para a lista',
+      previewFrame: 'Pré-visualização do PDF',
+      reload: 'Recarregar',
+    },
+  },
+
   agentManager: {
     title: 'Gerenciamento de agentes',
     subtitle: 'Detecte e gerencie os agentes disponíveis neste dispositivo.',
