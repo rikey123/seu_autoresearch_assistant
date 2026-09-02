@@ -403,6 +403,53 @@ export default {
     collapse: 'メニューを折りたたむ',
   },
 
+  research: {
+    workbench: 'リサーチワークベンチ',
+    placeholderTitle: 'モジュール構築中',
+    placeholderText: 'このモジュールはリサーチワークベンチの骨組みです。機能は今後のリリースで提供されます。',
+    sections: {
+      workflows: {
+        title: 'ワークフロー',
+        subtitle: '自動化された研究ワークフローを設計・実行します。',
+      },
+      papers: {
+        title: '文献',
+        subtitle: '研究文献を検索・整理・注釈します。',
+      },
+      latex: {
+        title: 'LaTeX',
+        subtitle: 'LaTeX 原稿の執筆・プレビュー・コンパイル。',
+      },
+      knowledge: {
+        title: 'ナレッジ',
+        subtitle: '研究ナレッジベースを構築・検索します。',
+      },
+      artifacts: {
+        title: '成果物',
+        subtitle: '図表やデータセットなどの研究成果物を閲覧します。',
+      }
+    },
+    papers: {
+      upload: 'PDF を取り込む',
+      loading: '文献を読み込み中…',
+      loadFailed: '文献ライブラリを読み込めませんでした。',
+      retry: '再試行',
+      empty: '文献はまだありません',
+      untitled: '無題の文献',
+      delete: '削除',
+      deleteConfirm: '削除',
+      cancel: 'キャンセル',
+      deleteConfirmText: '「{name}」をライブラリから削除しますか？保存された PDF も削除されます。',
+      deleteFailed: '文献を削除できませんでした。',
+      deleteSuccess: '文献を削除しました。',
+      uploadFailed: '取り込みに失敗しました。PDF ファイルのみ対応しています。',
+      uploadSuccess: '文献を取り込みました。',
+      backToList: '一覧に戻る',
+      previewFrame: 'PDF プレビュー',
+      reload: '再読み込み',
+    },
+  },
+
   agentManager: {
     title: 'エージェント管理',
     subtitle: 'このデバイスで利用可能なエージェントを検出・管理します。',

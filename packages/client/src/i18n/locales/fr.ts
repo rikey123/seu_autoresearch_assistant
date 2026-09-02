@@ -403,6 +403,53 @@ export default {
     collapse: 'Replier le menu',
   },
 
+  research: {
+    workbench: 'Espace de travail de recherche',
+    placeholderTitle: 'Module en construction',
+    placeholderText: 'Ce module fait partie de l\'espace de recherche. Ses fonctionnalités arriveront dans une prochaine version.',
+    sections: {
+      workflows: {
+        title: 'Workflows',
+        subtitle: 'Concevez, orchestrez et exécutez des flux de recherche automatisés.',
+      },
+      papers: {
+        title: 'Littérature',
+        subtitle: 'Recherchez, organisez et annotez la littérature scientifique.',
+      },
+      latex: {
+        title: 'LaTeX',
+        subtitle: 'Rédigez, prévisualisez et compilez des manuscrits LaTeX.',
+      },
+      knowledge: {
+        title: 'Connaissances',
+        subtitle: 'Construisez et interrogez votre base de connaissances de recherche.',
+      },
+      artifacts: {
+        title: 'Artefacts',
+        subtitle: 'Parcourez les figures, jeux de données et autres résultats de recherche.',
+      }
+    },
+    papers: {
+      upload: 'Importer un PDF',
+      loading: 'Chargement de la littérature…',
+      loadFailed: 'Impossible de charger la bibliothèque de littérature.',
+      retry: 'Réessayer',
+      empty: 'Aucune littérature pour le moment',
+      untitled: 'Sans titre',
+      delete: 'Supprimer',
+      deleteConfirm: 'Supprimer',
+      cancel: 'Annuler',
+      deleteConfirmText: 'Supprimer « {name} » de la bibliothèque ? Le PDF stocké sera retiré.',
+      deleteFailed: 'Impossible de supprimer la littérature.',
+      deleteSuccess: 'Littérature supprimée.',
+      uploadFailed: 'Échec de l\'import. Seuls les fichiers PDF sont pris en charge.',
+      uploadSuccess: 'Littérature importée.',
+      backToList: 'Retour à la liste',
+      previewFrame: 'Aperçu du PDF',
+      reload: 'Recharger',
+    },
+  },
+
   agentManager: {
     title: 'Gestion des agents',
     subtitle: 'Détectez et gérez les agents disponibles sur cet appareil.',

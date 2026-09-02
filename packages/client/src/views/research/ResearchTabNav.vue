@@ -15,6 +15,10 @@ const tabs = [
 ] as const
 
 const activeName = computed(() => String(route.name ?? ''))
+
+function isActive(tabName: string): boolean {
+  return activeName.value === tabName || activeName.value.startsWith(`${tabName}.`)
+}
 </script>
 
 <template>
@@ -23,10 +27,10 @@ const activeName = computed(() => String(route.name ?? ''))
       v-for="tab in tabs"
       :key="tab.name"
       class="research-tab"
-      :class="{ active: activeName === tab.name }"
+      :class="{ active: isActive(tab.name) }"
       :to="{ name: tab.name }"
       role="tab"
-      :aria-selected="activeName === tab.name"
+      :aria-selected="isActive(tab.name)"
     >
       {{ t(tab.label) }}
     </RouterLink>

@@ -403,6 +403,53 @@ export default {
     collapse: 'Contraer menú',
   },
 
+  research: {
+    workbench: 'Banco de trabajo de investigación',
+    placeholderTitle: 'Módulo en construcción',
+    placeholderText: 'Este módulo forma parte del área de trabajo de investigación. Su funcionalidad llegará en una próxima versión.',
+    sections: {
+      workflows: {
+        title: 'Flujos de trabajo',
+        subtitle: 'Diseña, orquesta y ejecuta flujos de investigación automatizados.',
+      },
+      papers: {
+        title: 'Literatura',
+        subtitle: 'Busca, organiza y anota literatura de investigación.',
+      },
+      latex: {
+        title: 'LaTeX',
+        subtitle: 'Escribe, previsualiza y compila manuscritos LaTeX.',
+      },
+      knowledge: {
+        title: 'Conocimiento',
+        subtitle: 'Construye y consulta tu base de conocimiento de investigación.',
+      },
+      artifacts: {
+        title: 'Artefactos',
+        subtitle: 'Explora figuras, conjuntos de datos y otros resultados de investigación.',
+      }
+    },
+    papers: {
+      upload: 'Importar PDF',
+      loading: 'Cargando literatura…',
+      loadFailed: 'No se pudo cargar la biblioteca de literatura.',
+      retry: 'Reintentar',
+      empty: 'Aún no hay literatura',
+      untitled: 'Sin título',
+      delete: 'Eliminar',
+      deleteConfirm: 'Eliminar',
+      cancel: 'Cancelar',
+      deleteConfirmText: '¿Eliminar «{name}» de la biblioteca? El PDF almacenado se borrará.',
+      deleteFailed: 'No se pudo eliminar la literatura.',
+      deleteSuccess: 'Literatura eliminada.',
+      uploadFailed: 'Error al importar. Solo se admiten archivos PDF.',
+      uploadSuccess: 'Literatura importada.',
+      backToList: 'Volver a la lista',
+      previewFrame: 'Vista previa del PDF',
+      reload: 'Recargar',
+    },
+  },
+
   agentManager: {
     title: 'Gestión de agentes',
     subtitle: 'Detecta y gestiona los agentes disponibles en este dispositivo.',

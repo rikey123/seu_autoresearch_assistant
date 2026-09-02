@@ -238,6 +238,11 @@ const router = createRouter({
       component: () => import('@/views/research/ResearchPapersView.vue'),
     },
     {
+      path: '/research/papers/:paperId',
+      name: 'research.papers.preview',
+      component: () => import('@/views/research/ResearchPaperPreviewView.vue'),
+    },
+    {
       path: '/research/latex',
       name: 'research.latex',
       component: () => import('@/views/research/ResearchLatexView.vue'),

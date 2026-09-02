@@ -403,6 +403,53 @@ export default {
     collapse: '메뉴 접기',
   },
 
+  research: {
+    workbench: '리서치 워크벤치',
+    placeholderTitle: '모듈 준비 중',
+    placeholderText: '이 모듈은 리서치 워크벤치의 골격 페이지입니다. 기능은 추후 릴리스에 제공됩니다.',
+    sections: {
+      workflows: {
+        title: '워크플로',
+        subtitle: '자동화된 연구 워크플로를 설계하고 실행합니다.',
+      },
+      papers: {
+        title: '문헌',
+        subtitle: '연구 문헌을 검색하고 정리하며 주석을 답니다.',
+      },
+      latex: {
+        title: 'LaTeX',
+        subtitle: 'LaTeX 원고를 작성, 미리 보기, 컴파일합니다.',
+      },
+      knowledge: {
+        title: '지식',
+        subtitle: '연구 지식 베이스를 구축하고 조회합니다.',
+      },
+      artifacts: {
+        title: '아티팩트',
+        subtitle: '그림, 데이터셋 등 연구 결과물을 탐색합니다.',
+      }
+    },
+    papers: {
+      upload: 'PDF 가져오기',
+      loading: '문헌을 불러오는 중…',
+      loadFailed: '문헌 라이브러리를 불러오지 못했습니다.',
+      retry: '다시 시도',
+      empty: '아직 문헌이 없습니다',
+      untitled: '제목 없는 문헌',
+      delete: '삭제',
+      deleteConfirm: '삭제',
+      cancel: '취소',
+      deleteConfirmText: '라이브러리에서 "{name}"을(를) 삭제할까요? 저장된 PDF도 함께 제거됩니다.',
+      deleteFailed: '문헌을 삭제하지 못했습니다.',
+      deleteSuccess: '문헌을 삭제했습니다.',
+      uploadFailed: '가져오기에 실패했습니다. PDF 파일만 지원됩니다.',
+      uploadSuccess: '문헌을 가져왔습니다.',
+      backToList: '목록으로 돌아가기',
+      previewFrame: 'PDF 미리보기',
+      reload: '새로 고침',
+    },
+  },
+
   agentManager: {
     title: '에이전트 관리',
     subtitle: '이 기기에서 사용할 수 있는 에이전트를 검색하고 관리합니다.',

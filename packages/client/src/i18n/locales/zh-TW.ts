@@ -391,6 +391,53 @@ export default {
     dockerUpdateNote: '資料會持續保留，重建容器不會遺失資料。',
   },
 
+  research: {
+    workbench: '研究工作臺',
+    placeholderTitle: '模組建置中',
+    placeholderText: '此模組是科研工作臺的骨架頁面，功能將在後續版本中逐步上線。',
+    sections: {
+      workflows: {
+        title: '工作流',
+        subtitle: '設計、編排並執行自動化科研流程。',
+      },
+      papers: {
+        title: '文獻',
+        subtitle: '檢索、組織與標註科研文獻。',
+      },
+      latex: {
+        title: 'LaTeX',
+        subtitle: '撰寫、預覽並編譯 LaTeX 論文。',
+      },
+      knowledge: {
+        title: '知識庫',
+        subtitle: '建置並檢索個人科研知識庫。',
+      },
+      artifacts: {
+        title: '研究成果',
+        subtitle: '瀏覽圖表、資料集等科研產出物。',
+      }
+    },
+    papers: {
+      upload: '匯入 PDF',
+      loading: '正在載入文獻…',
+      loadFailed: '文獻庫載入失敗。',
+      retry: '重試',
+      empty: '還沒有文獻',
+      untitled: '未命名文獻',
+      delete: '刪除',
+      deleteConfirm: '刪除',
+      cancel: '取消',
+      deleteConfirmText: '確定從文獻庫刪除「{name}」嗎？已儲存的 PDF 檔案將一併移除。',
+      deleteFailed: '刪除文獻失敗。',
+      deleteSuccess: '文獻已刪除。',
+      uploadFailed: '匯入失敗，僅支援 PDF 檔案。',
+      uploadSuccess: '文獻已匯入。',
+      backToList: '返回文獻列表',
+      previewFrame: 'PDF 預覽',
+      reload: '重新載入',
+    },
+  },
+
   agentManager: {
     title: 'Agent 管理',
     subtitle: '統一探索及管理此裝置上的 Agent。',
