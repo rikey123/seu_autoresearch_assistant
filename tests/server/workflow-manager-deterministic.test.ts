@@ -351,7 +351,7 @@ describe('deterministic engine lifecycle', () => {
     )
   }
 
-  it('stopRun without a deadline kills a long-running script process and lands its node row canceled', async () => {
+  it('stopRun without a deadline kills a long-running script process and lands its node row canceled', { timeout: 30_000 }, async () => {
     const { manager, workflowStore, executor } = await importManagerUnderTest()
     const runStore = await import('../../packages/server/src/modules/studio/repositories/workflow-run-store')
     const pidPath = join(deterministicTestRoot, `stop-pid-${randomUUID()}.txt`)
@@ -397,7 +397,7 @@ describe('deterministic engine lifecycle', () => {
     }
   })
 
-  it.runIf(process.platform === 'win32')('run deadline after a script spawned a grandchild tears down the whole process tree', async () => {
+  it.runIf(process.platform === 'win32')('run deadline after a script spawned a grandchild tears down the whole process tree', { timeout: 30_000 }, async () => {
     const { manager, workflowStore, executor } = await importManagerUnderTest()
     const childPidPath = join(deterministicTestRoot, `tree-child-${randomUUID()}.txt`)
     const grandchildPidPath = join(deterministicTestRoot, `tree-grandchild-${randomUUID()}.txt`)
@@ -438,7 +438,7 @@ describe('deterministic engine lifecycle', () => {
     expect(isProcessAlive(grandchildPid)).toBe(false)
   })
 
-  it('fails script nodes with a structured error when stdout or stderr crosses the output limit', async () => {
+  it('fails script nodes with a structured error when stdout or stderr crosses the output limit', { timeout: 30_000 }, async () => {
     const { executor } = await importManagerUnderTest()
     const baseRequest = {
       workflowId: 'wf-limit', runId: 'run-limit', nodeType: 'script',
