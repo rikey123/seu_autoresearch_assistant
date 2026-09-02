@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   compileLatexDocument,
@@ -18,6 +18,11 @@ import {
 } from '@/api/studio/latex'
 import PdfFilePreview from '@/components/hermes/files/PdfFilePreview.vue'
 import ResearchTabNav from './ResearchTabNav.vue'
+import {
+  LATEX_EDITOR_LINE_HEIGHT_PX,
+  LATEX_HIGHLIGHT_MAX_SOURCE_LENGTH,
+  renderLatexHighlight,
+} from './latexHighlight'
 
 const NEW_DOCUMENT_SOURCE = [
   '\\documentclass{article}',
@@ -48,6 +53,7 @@ const previewFailed = ref(false)
 const actionError = ref('')
 const engineInfo = ref<LatexEngineInfo | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const highlightRef = ref<HTMLPreElement | null>(null)
 const activeErrorKey = ref('')
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
@@ -273,10 +279,31 @@ function errorLocation(err: LatexEngineDiagnostic): string {
   return parts.join(' · ') || '—'
 }
 
-// Phase 1 editor is a plain monospace textarea with wrap disabled, so a
-// logical line is also a visual line and selecting it doubles as the
-// click-to-locate highlight (syntax highlighting arrives in P5).
-const EDITOR_LINE_HEIGHT_PX = 21
+// The editor is a monospace textarea (wrap disabled, so a logical line is
+// also a visual line) with a highlight.js overlay rendered behind it: the
+// textarea text is transparent, the caret stays visible, and the overlay
+// paints the token colors. Metrics shared by both layers live in
+// ./latexHighlight and are asserted against this file's SCSS by tests.
+const EDITOR_LINE_HEIGHT_PX = LATEX_EDITOR_LINE_HEIGHT_PX
+
+const highlightDisabled = computed(() => source.value.length > LATEX_HIGHLIGHT_MAX_SOURCE_LENGTH)
+const highlightHtml = computed(() =>
+  highlightDisabled.value ? '' : renderLatexHighlight(source.value))
+
+// Scroll events fire for user scrolling, and the watcher catches programmatic
+// or clamped scroll positions after content changes (e.g. the scroll done by
+// focusError or deletions that shrink the document).
+function syncOverlayScroll(): void {
+  const el = textareaRef.value
+  const overlay = highlightRef.value
+  if (!el || !overlay) return
+  overlay.scrollTop = el.scrollTop
+  overlay.scrollLeft = el.scrollLeft
+}
+
+watch(source, () => {
+  void nextTick(syncOverlayScroll)
+})
 
 function focusError(err: LatexEngineDiagnostic): void {
   if (err.line == null) return
@@ -290,6 +317,7 @@ function focusError(err: LatexEngineDiagnostic): void {
   el.focus()
   el.setSelectionRange(start, end)
   el.scrollTop = Math.max(0, lineIndex * EDITOR_LINE_HEIGHT_PX - el.clientHeight / 2)
+  syncOverlayScroll()
 }
 
 onMounted(async () => {
@@ -384,16 +412,29 @@ onBeforeUnmount(() => {
           {{ t('research.latex.engineUnavailable') }}
         </p>
         <p v-if="actionError" class="action-error">{{ actionError }}</p>
-        <textarea
-          ref="textareaRef"
-          v-model="source"
-          class="latex-source"
-          wrap="off"
-          spellcheck="false"
-          :placeholder="t('research.latex.source')"
-          :disabled="!currentId"
-          @input="dirty = true"
-        />
+        <div class="latex-editor-stack">
+          <pre
+            v-if="!highlightDisabled"
+            ref="highlightRef"
+            class="latex-highlight-layer"
+            aria-hidden="true"
+            v-html="highlightHtml"
+          />
+          <textarea
+            ref="textareaRef"
+            v-model="source"
+            class="latex-source"
+            wrap="off"
+            spellcheck="false"
+            :placeholder="t('research.latex.source')"
+            :disabled="!currentId"
+            @input="dirty = true"
+            @scroll="syncOverlayScroll"
+          />
+        </div>
+        <p v-if="highlightDisabled" class="highlight-disabled-hint">
+          {{ t('research.latex.highlightDisabled') }}
+        </p>
         <section class="error-panel" :class="{ empty: !errors.length }">
           <h3 class="panel-title">{{ t('research.latex.errorPanelTitle') }}</h3>
           <p v-if="compiling" class="pane-hint">{{ t('research.latex.statusRunning') }}</p>
@@ -665,15 +706,64 @@ onBeforeUnmount(() => {
   color: $error;
 }
 
-.latex-source {
+// Editor stack: the highlight overlay sits behind the transparent textarea.
+// The metrics below (13px / 21px / 10px / 12px) must stay identical between
+// .latex-highlight-layer and .latex-source; they are declared once in
+// ./latexHighlight.ts and tests/client/latex-highlight.test.ts fails if the
+// two style blocks drift apart.
+.latex-editor-stack {
+  position: relative;
   flex: 1;
   min-height: 200px;
+  display: flex;
+  background: $bg-input;
+  border-radius: $radius-sm;
+}
+
+.latex-highlight-layer {
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  margin: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: $font-code;
+  font-size: 13px;
+  line-height: 21px;
+  padding-block: 10px;
+  padding-inline: 12px;
+  white-space: pre;
+
+  :deep(.hljs-keyword) {
+    color: var(--accent-info);
+    font-weight: 600;
+  }
+
+  :deep(.hljs-comment) {
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  :deep(.hljs-built_in) {
+    color: var(--success);
+  }
+}
+
+.latex-source {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  z-index: 1;
   resize: none;
   border: 1px solid $border-color;
   border-radius: $radius-sm;
-  background: $bg-input;
-  color: $text-primary;
-  padding: 10px 12px;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text-primary);
+  padding-block: 10px;
+  padding-inline: 12px;
   font-family: $font-code;
   font-size: 13px;
   line-height: 21px;
@@ -688,6 +778,20 @@ onBeforeUnmount(() => {
   &::placeholder {
     color: var(--input-placeholder-color);
   }
+
+  // Text glyphs live in the overlay, but the native selection still paints in
+  // the textarea layer; a translucent theme-tinted background keeps the
+  // selected tokens readable instead of hiding them behind an opaque block.
+  &::selection {
+    background: rgba(var(--text-primary-rgb), 0.22);
+  }
+}
+
+.highlight-disabled-hint {
+  flex: none;
+  margin: 0;
+  font-size: 12px;
+  color: $warning;
 }
 
 .error-panel {

@@ -270,6 +270,7 @@ const RESEARCH_LATEX_LOCALIZED_KEYS = [
   'research.latex.loading',
   'research.latex.emptyDocuments',
   'research.latex.deleteDocument',
+  'research.latex.highlightDisabled',
 ]
 
 // VCP card layer + paper send-to-chat copy (keys referenced dynamically are

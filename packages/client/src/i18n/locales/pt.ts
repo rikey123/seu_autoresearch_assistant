@@ -483,6 +483,7 @@ export default {
       loading: 'Carregando…',
       emptyDocuments: 'Nenhum documento ainda. Crie um para começar a escrever.',
       deleteDocument: 'Excluir documento',
+      highlightDisabled: 'O código-fonte excede 200 KB — o realce de sintaxe foi desativado para manter a fluidez.',
     },
   
 

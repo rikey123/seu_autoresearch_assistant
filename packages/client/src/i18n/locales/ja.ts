@@ -483,6 +483,7 @@ export default {
       loading: '読み込み中…',
       emptyDocuments: 'まだドキュメントがありません。新規作成して執筆を始めましょう。',
       deleteDocument: 'ドキュメントを削除',
+      highlightDisabled: 'ソースが200KBを超えたため、編集操作性を保つためにシンタックスハイライトを無効にしました。',
     },
   
 

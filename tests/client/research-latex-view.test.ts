@@ -158,6 +158,54 @@ describe('ResearchLatexView', () => {
     }
   })
 
+  it('renders the highlight overlay behind the editor and keeps the textarea editable', async () => {
+    const wrapper = await mountView()
+
+    const overlay = wrapper.get('.latex-highlight-layer')
+    expect(overlay.attributes('aria-hidden')).toBe('true')
+    expect(overlay.html()).toContain('hljs-keyword')
+
+    await wrapper.get('textarea').setValue('% only a comment now\n')
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toContain('comment')
+    expect(wrapper.get('.latex-highlight-layer').html()).toContain('hljs-comment')
+  })
+
+  it('escapes hostile document source before it reaches the overlay', async () => {
+    mocks.fetchLatexDocument.mockResolvedValue({
+      ...baseDocument(),
+      source: '<script>alert(1)</script> % <img src=x onerror=alert(1)>',
+    })
+    const wrapper = await mountView()
+
+    const html = wrapper.get('.latex-highlight-layer').html()
+    expect(html).not.toContain('<script')
+    expect(html).toContain('&lt;script&gt;')
+    expect(html).not.toContain('<img')
+  })
+
+  it('keeps the overlay scroll position in sync with the textarea', async () => {
+    const wrapper = await mountView()
+
+    const textarea = wrapper.get('textarea')
+    const overlay = wrapper.get('.latex-highlight-layer')
+    textarea.element.scrollTop = 63
+    textarea.element.scrollLeft = 12
+    await textarea.trigger('scroll')
+
+    expect(overlay.element.scrollTop).toBe(63)
+    expect(overlay.element.scrollLeft).toBe(12)
+  })
+
+  it('disables highlighting and shows a hint when the source exceeds the size threshold', async () => {
+    const oversizedSource = 'x'.repeat(200 * 1024 + 1)
+    mocks.fetchLatexDocument.mockResolvedValue({ ...baseDocument(), source: oversizedSource })
+    const wrapper = await mountView()
+
+    expect(wrapper.find('.latex-highlight-layer').exists()).toBe(false)
+    expect(wrapper.get('.highlight-disabled-hint').text()).toBe('research.latex.highlightDisabled')
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe(oversizedSource)
+  })
+
   it('maps an unconfigured engine to the engine-unavailable copy', async () => {
     mocks.compileLatexDocument.mockRejectedValue(
       Object.assign(new Error('tectonic compiler is not configured; set TECTONIC_BIN or install tectonic in PATH'), {
