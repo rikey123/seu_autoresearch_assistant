@@ -1558,7 +1558,11 @@ export default {
       stopFailed: '停止执行失败',
       delete: '删除记录',
       deleteSuccess: '执行记录已删除',
-    },
+          notificationTitle: '工作流「{name}」运行结束',
+      notificationCompleted: '运行已完成。',
+      notificationFailed: '运行失败，打开运行详情查看节点错误。',
+      notificationCanceled: '运行已取消。',
+},
     inspector: {
       selected: '选中节点',
       none: '未选择节点',

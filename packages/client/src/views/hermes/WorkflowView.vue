@@ -16,6 +16,7 @@ import { MiniMap } from '@vue-flow/minimap'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { buildWorkflowEvidenceRows, latestWorkflowNodeSession, workflowNodeSessionByExecution, summarizeWorkflowEvidenceRows, workflowEdgePlaybackState, type WorkflowEvidenceRow } from '@/utils/workflow-history'
+import { showSystemNotification } from '@/utils/completion-notification'
 import { resolveWorkflowRunPageSwipe, type WorkflowRunPagerPage } from '@/utils/workflow-run-pager'
 import {
   normalizeWorkflowRunEdge,
@@ -1760,6 +1761,30 @@ async function respondWorkflowNodeApproval(approved: boolean) {
   }
 }
 
+const lastRunStatusForNotification = new Map<string, string>()
+
+// Notify once per run when it leaves queued/running and lands on a terminal
+// status. The notification helper handles desktop bridge, permission,
+// foreground suppression, and cross-tab dedup; the tag keeps one run's
+// transition to a single notification.
+function notifyWorkflowRunCompletions(runs: WorkflowRunRecord[]) {
+  for (const run of runs) {
+    const previous = lastRunStatusForNotification.get(run.id)
+    lastRunStatusForNotification.set(run.id, run.status)
+    if (!previous || previous === run.status) continue
+    const wasActive = previous === 'queued' || previous === 'running'
+    const nowTerminal = run.status !== 'queued' && run.status !== 'running'
+    if (!wasActive || !nowTerminal) continue
+    const workflowName = workflows.value.find(item => item.id === run.workflow_id)?.name
+    void showSystemNotification({
+      title: t('workflow.runs.notificationTitle', { name: workflowName || run.id }),
+      body: t(`workflow.runs.notification${run.status.charAt(0).toUpperCase()}${run.status.slice(1)}`),
+      tag: `workflow-run-complete-${run.id}`,
+      clickUrl: `/hermes/workflow?workflowId=${encodeURIComponent(run.workflow_id)}&runId=${encodeURIComponent(run.id)}`,
+    }, { requireBackground: false, deduplicate: true })
+  }
+}
+
 async function loadWorkflowRuns(
   workflowId = activeWorkflowId.value,
   selectRunId?: string | null,
@@ -1784,6 +1809,7 @@ async function loadWorkflowRuns(
     }
     if (requestSeq !== workflowRunsLoadSeq) return
     workflowRuns.value = runs
+    notifyWorkflowRunCompletions(runs)
     if (nextSelectedRunId) {
       const selectedRun = runs.find(run => run.id === nextSelectedRunId)
       if (selectedRun) {

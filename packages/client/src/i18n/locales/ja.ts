@@ -2814,7 +2814,11 @@ export default {
     runs: {
       title: '実行記録', refresh: '更新', empty: '実行記録はありません', startNodes: '開始ノード {count} 件', snapshotIndicator: 'この実行の開始時点で固定されたスナップショット', show: '実行記録を表示', hide: '実行記録を隠す',
       nodeSessionTitle: 'ノードセッション - {node}', noNodeSession: 'このノードにはまだセッション記録がありません', loadNodeSessionFailed: 'ノードセッションの読み込みに失敗しました', stop: '実行を停止', stopRequested: '停止を要求しました', stopFailed: '実行の停止に失敗しました', delete: '記録を削除', deleteSuccess: '実行記録を削除しました',
-    },
+          notificationTitle: 'ワークフロー「{name}」の実行が終了しました',
+      notificationCompleted: '実行は正常に完了しました。',
+      notificationFailed: '実行に失敗しました。実行を開き、ノードエラーを確認してください。',
+      notificationCanceled: '実行がキャンセルされました。',
+},
     inspector: { selected: '選択中のノード', none: 'ノードが選択されていません' },
     agents: { planner: '計画担当', researcher: '調査担当', builder: '実装担当', reviewer: 'レビュー担当' },
     models: { default: '既定のモデル', fast: '高速モデル', reasoning: '推論モデル' },

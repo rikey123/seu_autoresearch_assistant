@@ -1381,7 +1381,11 @@ export default {
       stopFailed: 'Не удалось остановить запуск',
       delete: 'Удалить запись',
       deleteSuccess: 'Запись о запуске удалена',
-    },
+          notificationTitle: 'Выполнение «{name}» завершено',
+      notificationCompleted: 'Выполнение завершилось успешно.',
+      notificationFailed: 'Выполнение завершилось ошибкой. Откройте запуск для просмотра ошибок узлов.',
+      notificationCanceled: 'Выполнение отменено.',
+},
     inspector: {
       selected: 'Выбранный узел',
       none: 'Узел не выбран',

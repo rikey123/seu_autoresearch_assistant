@@ -1514,7 +1514,11 @@ export default {
       stopFailed: 'Failed to stop run',
       delete: 'Delete record',
       deleteSuccess: 'Run record deleted',
-    },
+          notificationTitle: 'Workflow “{name}” finished',
+      notificationCompleted: 'The run completed successfully.',
+      notificationFailed: 'The run failed. Open the run to inspect node errors.',
+      notificationCanceled: 'The run was canceled.',
+},
     inspector: {
       selected: 'Selected Node',
       none: 'No node selected',
