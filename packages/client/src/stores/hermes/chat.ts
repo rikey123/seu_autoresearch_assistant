@@ -3,7 +3,7 @@ import { archiveSession as archiveSessionApi, deleteSession as deleteSessionApi,
 import { getActiveProfileName } from '@/api/client'
 import { inferCodingAgentApiMode, normalizeCodingAgentApiMode, type ChatCodingAgentId } from '@/api/coding-agents'
 import { getDownloadUrl } from '@/api/studio/download'
-import { askQuestion, getQuestion, type RagCitation } from '@/api/studio/research-knowledge'
+import { chatAsk, getChatAsk, listSessionChatAsks, type RagChatAsk, type RagCitation } from '@/api/studio/research-knowledge'
 import { listPapers } from '@/api/studio/research-library'
 import type { ProviderApiMode } from '@/api/studio/provider-api-mode'
 import { defineStore } from 'pinia'
@@ -1855,6 +1855,7 @@ export const useChatStore = defineStore('chat', () => {
       if (!detail) return false
       const mapped = mapHermesMessages(detail.messages || [])
       target.messages = mapped
+      void hydrateRagChatAsks(sid)
       restorePersistedSubagentStreams(sid)
       setWorkspaceRunChanges(sid, detail.workspaceRunChanges || [])
       target.loadedMessageCount = detail.messages.length
@@ -2021,6 +2022,7 @@ export const useChatStore = defineStore('chat', () => {
           if (data.messages?.length) {
             target.messages = mapHermesMessages(data.messages as any[])
             restorePersistedSubagentStreams(sessionId)
+            void hydrateRagChatAsks(sessionId)
             setWorkspaceRunChanges(sessionId, data.workspaceRunChanges || [])
             target.loadedMessageCount = data.messageLoadedCount ?? data.messages.length
             target.messageTotal = data.messageTotal ?? target.messageCount ?? target.loadedMessageCount
@@ -2147,6 +2149,7 @@ export const useChatStore = defineStore('chat', () => {
       const olderMessages = mapHermesMessages(page.messages).filter(message => !existingIds.has(message.id))
       target.messages = [...olderMessages, ...target.messages]
       restorePersistedSubagentStreams(sessionId)
+      void hydrateRagChatAsks(sessionId)
       mergeWorkspaceRunChanges(sessionId, page.workspaceRunChanges || [])
       target.loadedMessageCount = offset + page.messages.length
       target.messageTotal = page.total
@@ -3730,6 +3733,7 @@ export const useChatStore = defineStore('chat', () => {
           const replayRunMarker = getReplayRunMarker(data.events) ?? activeRunMarker
           target.messages = mapHermesMessages(data.messages as any[])
           restorePersistedSubagentStreams(sid)
+          void hydrateRagChatAsks(sid)
           setWorkspaceRunChanges(sid, data.workspaceRunChanges || [])
           target.loadedMessageCount = data.messageLoadedCount ?? data.messages.length
           target.messageTotal = data.messageTotal ?? target.messageCount ?? target.loadedMessageCount
@@ -5153,16 +5157,19 @@ export const useChatStore = defineStore('chat', () => {
 
   // ─── Knowledge base chat orchestration (@知识库) ────────────────────────
   //
-  // Pure client-side orchestration on top of the T4.1 RAG HTTP API: the user
-  // message is appended locally, the question is enqueued through the existing
-  // /api/studio/research/rag/collections/:id/ask endpoint, and the cited
-  // answer is posted back as an assistant-side message. No agent run is
-  // started, so sessions without a knowledge base selection are untouched.
+  // Server-persisted orchestration: the question is submitted through
+  // POST /api/studio/research/rag/chat-asks, which appends the user message to
+  // the session's server-side history and enqueues the cited Q&A. The ask
+  // worker appends the assistant answer to the same history once it is
+  // terminal. Optimistic local messages adopt the server message ids so a
+  // history reload never duplicates them; citations are hydrated from the ask
+  // bindings when persisted history is loaded. No agent run is started, so
+  // sessions without a knowledge base selection are untouched.
 
   const RAG_ASK_POLL_INTERVAL_MS = 500
   // Matches the sidecar's own 10 minute timeout plus queue slack.
   const RAG_ASK_POLL_TIMEOUT_MS = 15 * 60 * 1000
-  // A single transient getQuestion failure (socket blip, mid-deploy restart)
+  // A single transient getChatAsk failure (socket blip, mid-deploy restart)
   // must not fail the whole ask: retry up to this many consecutive errors
   // before surfacing the error in-chat.
   const RAG_ASK_POLL_MAX_ERRORS = 2
@@ -5185,6 +5192,63 @@ export const useChatStore = defineStore('chat', () => {
     return titles
   }
 
+  function ragCitationsWithTitles(
+    citations: RagCitation[],
+    titles: Map<string, string>,
+  ): RagCitationWithPaper[] {
+    return citations.map(citation => ({
+      paperId: citation.paperId,
+      page: citation.page,
+      snippet: citation.snippet,
+      title: titles.get(citation.paperId),
+    }))
+  }
+
+  /**
+   * Swap an optimistic message id for the canonical server message id. When
+   * the server id is already present (history reloaded while the ask ran) the
+   * optimistic copy is dropped so the reload never yields duplicates.
+   */
+  function adoptServerKbMessageId(sessionId: string, localId: string, serverId: string | null | undefined) {
+    if (!serverId) return
+    const target = sessions.value.find(s => s.id === sessionId)
+    if (!target) return
+    const idx = target.messages.findIndex(m => m.id === localId)
+    if (idx === -1) return
+    if (target.messages.some(m => m.id === serverId)) {
+      target.messages.splice(idx, 1)
+      return
+    }
+    target.messages[idx] = { ...target.messages[idx], id: serverId }
+  }
+
+  /**
+   * Hydrate persisted knowledge base answers with their citations (and a
+   * failed-ask marker). Bindings come from the research domain keyed by the
+   * server message ids; already-hydrated messages are left untouched.
+   */
+  async function hydrateRagChatAsks(sessionId: string | null | undefined) {
+    if (!sessionId) return
+    const target = sessions.value.find(s => s.id === sessionId)
+    if (!target || target.messages.length === 0) return
+    try {
+      const asks = await listSessionChatAsks(sessionId)
+      if (asks.length === 0) return
+      const titles = await resolveCitationTitles(asks.flatMap(ask => ask.citations))
+      for (const ask of asks) {
+        if (!ask.assistantMessageId) continue
+        const message = target.messages.find(m => m.id === ask.assistantMessageId)
+        if (!message) continue
+        if (!message.ragCitations?.length) {
+          message.ragCitations = ragCitationsWithTitles(ask.citations, titles)
+        }
+      }
+    } catch {
+      // Hydration is best-effort: an unreachable research API must not break
+      // session loading.
+    }
+  }
+
   async function sendKnowledgeBaseMessage(collection: { id: string; name: string }, content: string) {
     const trimmed = content.trim()
     if (!trimmed) return
@@ -5194,8 +5258,9 @@ export const useChatStore = defineStore('chat', () => {
       switchSession(session.id)
     }
     const sid = activeSessionId.value!
+    const localUserId = uid()
     addMessage(sid, {
-      id: uid(),
+      id: localUserId,
       role: 'user',
       content: trimmed,
       timestamp: Date.now(),
@@ -5224,18 +5289,23 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     try {
-      const submitted = await askQuestion(collection.id, trimmed)
+      const profile = activeSession.value?.profile || getActiveProfileName() || undefined
+      const submitted = await chatAsk(sid, collection.id, trimmed, profile)
+      // The user question is now part of the server history: adopt its
+      // message id so reloads map to the same row instead of duplicating it.
+      adoptServerKbMessageId(sid, localUserId, submitted.userMessageId)
+
       const deadline = Date.now() + RAG_ASK_POLL_TIMEOUT_MS
-      let record = submitted
+      let ask: RagChatAsk | null = null
       let pollErrors = 0
-      while (record.status !== 'answered' && record.status !== 'failed') {
+      while (!ask || ask.status === 'pending') {
         if (Date.now() > deadline) {
           failAsk('', true)
           return
         }
         await delayMs(RAG_ASK_POLL_INTERVAL_MS)
         try {
-          record = await getQuestion(submitted.id)
+          ask = await getChatAsk(submitted.question.id)
           pollErrors = 0
         } catch (error) {
           // Transient network/server hiccups are retried a couple of times;
@@ -5244,20 +5314,31 @@ export const useChatStore = defineStore('chat', () => {
           if (pollErrors > RAG_ASK_POLL_MAX_ERRORS) throw error
         }
       }
-      if (record.status !== 'answered' || !(record.answer || '').trim()) {
-        failAsk(record.error || '')
+      if (ask.status !== 'answered' || !(ask.answer || '').trim()) {
+        failAsk(ask.error || '')
         return
       }
-      const titles = await resolveCitationTitles(record.citations)
-      updateMessage(sid, answerId, {
+      const titles = await resolveCitationTitles(ask.citations)
+      const citations = ragCitationsWithTitles(ask.citations, titles)
+      const persistedId = ask.assistantMessageId || answerId
+      adoptServerKbMessageId(sid, answerId, ask.assistantMessageId)
+      const patched = sessions.value.find(s => s.id === sid)?.messages.some(m => m.id === persistedId)
+      if (!patched) {
+        // The placeholder vanished (history reloaded mid-ask) before the
+        // persisted answer arrived: render it as a fresh message.
+        addMessage(sid, {
+          id: persistedId,
+          role: 'assistant',
+          content: ask.answer || '',
+          timestamp: Date.now(),
+          ragCitations: citations,
+        })
+        return
+      }
+      updateMessage(sid, persistedId, {
         isStreaming: false,
-        content: record.answer || '',
-        ragCitations: record.citations.map(citation => ({
-          paperId: citation.paperId,
-          page: citation.page,
-          snippet: citation.snippet,
-          title: titles.get(citation.paperId),
-        })),
+        content: ask.answer || '',
+        ragCitations: citations,
       })
     } catch (error) {
       failAsk((error as { message?: string } | null)?.message || '')
@@ -5324,6 +5405,7 @@ export const useChatStore = defineStore('chat', () => {
               }
               activeSession.value.messages = mapHermesMessages(data.messages as any[])
               restorePersistedSubagentStreams(sid)
+              void hydrateRagChatAsks(sid)
               setWorkspaceRunChanges(sid, data.workspaceRunChanges || [])
               activeSession.value.loadedMessageCount = data.messageLoadedCount ?? data.messages.length
               activeSession.value.messageTotal = data.messageTotal ?? activeSession.value.messageCount ?? activeSession.value.loadedMessageCount

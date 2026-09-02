@@ -31,3 +31,10 @@ ragRoutes.get('/api/studio/research/rag/index-jobs/:jobId', ctrl.indexJobStatus)
 ragRoutes.post('/api/studio/research/rag/collections/:id/ask', ctrl.ask)
 ragRoutes.get('/api/studio/research/rag/collections/:id/history', ctrl.history)
 ragRoutes.get('/api/studio/research/rag/questions/:questionId', ctrl.questionStatus)
+
+// Chat-side knowledge base asks: persist the user question and the cited
+// answer into the chat session's server-side history (bindings in rag.db,
+// session history writes through the Studio public sessions facade).
+ragRoutes.post('/api/studio/research/rag/chat-asks', ctrl.chatAsk)
+ragRoutes.get('/api/studio/research/rag/chat-asks', ctrl.sessionChatAsks)
+ragRoutes.get('/api/studio/research/rag/chat-asks/:questionId', ctrl.chatAskStatus)

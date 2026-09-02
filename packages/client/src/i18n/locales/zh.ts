@@ -529,6 +529,7 @@ export default {
       chatCitationsTitle: '引用溯源',
       chatAskFailed: '知识库问答失败。',
       chatAskTimeout: '知识库回答超时。',
+      chatSelectionExpired: '已保存的知识库已不存在。',
     },
   },
 

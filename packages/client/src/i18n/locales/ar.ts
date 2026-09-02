@@ -530,6 +530,7 @@ export default {
       chatCitationsTitle: 'المراجع',
       chatAskFailed: 'فشل سؤال قاعدة المعرفة.',
       chatAskTimeout: 'انتهت مهلة الإجابة من قاعدة المعرفة.',
+      chatSelectionExpired: 'قاعدة المعرفة المحفوظة لم تعد متوفرة.',
     },
   },
 

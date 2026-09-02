@@ -223,6 +223,40 @@ describe('ChatInput knowledge base @ mention', () => {
     expect(sendKb).not.toHaveBeenCalled()
   })
 
+  it('keeps a restored selection armed for the KB ask even while the collection list is still loading', async () => {
+    // The restored selection points at a collection that may or may not
+    // exist; the list request is kept pending so validation cannot finish.
+    knowledgeApi.listCollections.mockReturnValue(new Promise(() => {}))
+    const { wrapper, chatStore, knowledgeStore } = mountForSession('session-kb')
+    knowledgeStore.selectionBySession['session-kb'] = 'col-1'
+    await flushPromises()
+    const sendKb = vi.spyOn(chatStore, 'sendKnowledgeBaseMessage').mockResolvedValue(undefined)
+    const sendMessage = vi.spyOn(chatStore, 'sendMessage').mockResolvedValue(undefined)
+
+    await typeText(wrapper as any, 'What is attention?')
+    await wrapper.get('.send-button').trigger('click')
+    await flushPromises()
+
+    // The send must not silently fall through to the agent run.
+    expect(sendKb).toHaveBeenCalledTimes(1)
+    expect(sendKb.mock.calls[0][0]).toMatchObject({ id: 'col-1' })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('shows the expired-selection notice when a restored collection no longer exists', async () => {
+    localStorage.setItem('research_kb_selection_v1', JSON.stringify({ 'session-kb': 'col-ghost' }))
+    const { wrapper, knowledgeStore } = mountForSession('session-kb')
+    await flushPromises()
+
+    // Lazy validation cleared the dead selection and the composer explains it.
+    expect(knowledgeStore.selectionBySession['session-kb']).toBeUndefined()
+    expect(JSON.parse(localStorage.getItem('research_kb_selection_v1') || '{}')).toEqual({})
+    const notice = wrapper.find('[data-testid="kb-selection-invalidated"]')
+    expect(notice.exists()).toBe(true)
+    expect(notice.text()).toContain('research.rag.chatSelectionExpired')
+    expect(wrapper.find('[data-testid="kb-selection-chip"]').exists()).toBe(false)
+  })
+
   it('removing the chip disarms the session', async () => {
     const { wrapper, knowledgeStore } = mountForSession('session-kb')
     knowledgeStore.collections = [collection('col-1', 'Transformers')]

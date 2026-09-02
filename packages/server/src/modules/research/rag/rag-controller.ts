@@ -15,8 +15,13 @@ import {
   listCollectionView,
   listCollectionMembersView,
   removeMember,
+  requestChatAsk,
   updateCollectionMetadata,
 } from './rag-service'
+import {
+  getChatAskView,
+  listSessionChatAskViews,
+} from './chat-ask-service'
 
 function bodyRecord(ctx: Context): Record<string, unknown> {
   const body = ctx.request.body
@@ -149,6 +154,56 @@ export async function ask(ctx: Context) {
     const question = enqueueQuestion(id, bodyRecord(ctx))
     ctx.status = 202
     ctx.body = { question }
+  } catch (err) {
+    respondError(ctx, err)
+  }
+}
+
+export async function chatAsk(ctx: Context) {
+  try {
+    const body = bodyRecord(ctx)
+    const { question, userMessageId } = requestChatAsk({
+      sessionId: body.sessionId,
+      collectionId: body.collectionId,
+      question: body.question,
+      profile: body.profile,
+    })
+    ctx.status = 202
+    ctx.body = { question, userMessageId }
+  } catch (err) {
+    respondError(ctx, err)
+  }
+}
+
+export async function chatAskStatus(ctx: Context) {
+  const id = typeof ctx.params?.questionId === 'string' ? ctx.params.questionId.trim() : ''
+  if (!id) {
+    ctx.status = 400
+    ctx.body = { error: 'question id is required' }
+    return
+  }
+  try {
+    const askView = getChatAskView(id)
+    if (!askView) {
+      ctx.status = 404
+      ctx.body = { error: 'chat ask not found' }
+      return
+    }
+    ctx.body = { ask: askView }
+  } catch (err) {
+    respondError(ctx, err)
+  }
+}
+
+export async function sessionChatAsks(ctx: Context) {
+  const sessionId = typeof ctx.query?.sessionId === 'string' ? ctx.query.sessionId.trim() : ''
+  if (!sessionId) {
+    ctx.status = 400
+    ctx.body = { error: 'session id is required' }
+    return
+  }
+  try {
+    ctx.body = { asks: listSessionChatAskViews(sessionId) }
   } catch (err) {
     respondError(ctx, err)
   }

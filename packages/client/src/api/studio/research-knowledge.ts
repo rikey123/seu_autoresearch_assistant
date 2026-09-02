@@ -150,6 +150,52 @@ export async function getQuestion(questionId: string): Promise<RagQuestion> {
   return res.question
 }
 
+/** A chat-side knowledge base ask binding: session history linkage plus the hydrated question record. */
+export interface RagChatAsk {
+  questionId: string
+  sessionId: string
+  status: 'pending' | 'answered' | 'failed'
+  userMessageId: string
+  assistantMessageId: string | null
+  error: string | null
+  question: string
+  answer: string | null
+  citations: RagCitation[]
+  collectionId: string
+}
+
+/**
+ * Submit a knowledge base question from a chat session. The server persists
+ * the user message into the session history, enqueues the question, and
+ * returns the ids the client needs to replace its optimistic messages.
+ */
+export async function chatAsk(sessionId: string, collectionId: string, question: string, profile?: string): Promise<{ question: RagQuestion; userMessageId: string | null }> {
+  const res = await request<{ question: RagQuestion; userMessageId: string | null }>(
+    '/api/studio/research/rag/chat-asks',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, collectionId, question, profile }),
+    },
+  )
+  return res
+}
+
+export async function getChatAsk(questionId: string): Promise<RagChatAsk> {
+  const res = await request<{ ask: RagChatAsk }>(
+    `/api/studio/research/rag/chat-asks/${encodeURIComponent(questionId)}`,
+  )
+  return res.ask
+}
+
+/** Bindings for a session, oldest first — the hydrate feed for loaded history. */
+export async function listSessionChatAsks(sessionId: string): Promise<RagChatAsk[]> {
+  const res = await request<{ asks: RagChatAsk[] }>(
+    `/api/studio/research/rag/chat-asks?sessionId=${encodeURIComponent(sessionId)}`,
+  )
+  return res.asks
+}
+
 export async function getHistory(id: string): Promise<RagQuestion[]> {
   const res = await request<{ history: RagQuestion[] }>(
     `/api/studio/research/rag/collections/${encodeURIComponent(id)}/history`,

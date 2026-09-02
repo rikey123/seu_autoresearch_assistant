@@ -16,13 +16,14 @@ const localeMessages: Record<string, Record<string, unknown>> = {
   en, zh, 'zh-TW': zhTW, ar, de, es, fr, ja, ko, pt, ru,
 }
 
-// User-visible strings added for the chat @知识库 integration (T4.2).
+// User-visible strings added for the chat @知识库 integration (T4.2, P7).
 const CHAT_RAG_KEYS = [
   'research.rag.chatSelectedHint',
   'research.rag.chatClearSelection',
   'research.rag.chatCitationsTitle',
   'research.rag.chatAskFailed',
   'research.rag.chatAskTimeout',
+  'research.rag.chatSelectionExpired',
 ] as const
 
 function resolve(messages: Record<string, unknown>, path: string): unknown {

@@ -542,6 +542,7 @@ export default {
       chatCitationsTitle: '引用',
       chatAskFailed: 'ナレッジベースへの質問に失敗しました。',
       chatAskTimeout: 'ナレッジベースの回答がタイムアウトしました。',
+      chatSelectionExpired: '保存されていたナレッジベースは利用できません。',
     },
   },
 

@@ -542,6 +542,7 @@ export default {
       chatCitationsTitle: 'Quellen',
       chatAskFailed: 'Die Wissensbasis-Frage ist fehlgeschlagen.',
       chatAskTimeout: 'Die Antwort der Wissensbasis hat das Zeitlimit überschritten.',
+      chatSelectionExpired: 'Die gespeicherte Wissensbasis ist nicht mehr verfügbar.',
     },
   },
 
