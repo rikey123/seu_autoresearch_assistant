@@ -199,6 +199,15 @@ describe('research translation queue', () => {
     const badHeader = await postJob({ pdfPath: notPdf })
     expect(badHeader.status).toBe(400)
     expect(badHeader.body.error).toContain('%PDF-')
+
+    const pdfPath = writeStubPdf('outdir-check.pdf')
+    // outDir is deliberately not restricted to appHome/research (the queue
+    // translates caller-chosen PDFs anywhere on disk, mirroring the T2.2
+    // template), but a relative path would silently resolve against the host
+    // process cwd, so it is rejected outright.
+    const relativeOut = await postJob({ pdfPath, outDir: 'relative/out' })
+    expect(relativeOut.status).toBe(400)
+    expect(relativeOut.body.error).toContain('outDir must be an absolute path')
   })
 
   it('runs a job end to end through the pdf2zh stub and records products', async () => {
@@ -336,6 +345,42 @@ describe('research translation queue', () => {
     expect(job?.error).toContain('interrupted')
   })
 
+  it('graceful shutdown stops the worker and leaves a restart-safe queue database', async () => {
+    const PAPER_STORE_MODULE = '../../packages/server/src/modules/research/library/paper-store'
+    const { createPaper, getPapersDb, getPaper, closePapersDb } = await import(PAPER_STORE_MODULE)
+    const lifecycle = await import('../../packages/server/src/modules/research')
+
+    const paper = createPaper({ title: 'Shutdown paper', file_path: join(workDir, 'shutdown.pdf') })
+    const pdfPath = writeStubPdf('shutdown.pdf')
+    process.env.PDF2ZH_STUB_MODE = 'slow'
+    const submitted = await postJob({ pdfPath })
+    const jobId = submitted.body.job.id
+    const deadline = Date.now() + 5000
+    while (store.getTranslationJobRow(jobId)?.status !== 'running') {
+      if (Date.now() > deadline) throw new Error('job never started running')
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+
+    // Bootstrap registers shutdownResearchResources as the research shutdown
+    // step: worker first (child tree killed, queue DB closed), then the other
+    // research-owned databases.
+    lifecycle.shutdownResearchResources()
+
+    // A running row must not survive the shutdown: the first reopen of the
+    // queue database reconciles it to failed, exactly like a server restart.
+    const after = store.getTranslationJobRow(jobId)
+    expect(after?.status).toBe('failed')
+    expect(after?.error).toContain('interrupted')
+    expect(after?.finished_at).toBeGreaterThan(0)
+
+    // The papers database closed without corrupting persisted rows.
+    expect(getPapersDb()).toBeTruthy()
+    expect(getPaper(paper.id)?.title).toBe('Shutdown paper')
+    // The reopen above holds a new handle; close it again so the temp dir can
+    // be removed on Windows (WAL files stay locked while the handle is open).
+    closePapersDb()
+  })
+
   it('lists jobs with status filtering through GET /translations', async () => {
     const pdfPath = writeStubPdf('listed.pdf')
     await postJob({ pdfPath })
@@ -463,6 +508,71 @@ describe('research translation bilingual preview (HTTP Range streaming)', () => 
     const early = await dispatch('GET', `/api/studio/research/library/translations/${jobId}/files/dual`)
     expect(early.status).toBe(404)
     await waitForJob(jobId, 'failed', 10000)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Exit hook hygiene: the process 'exit' listener must be installed at most
+// once per process (module reloads must not accumulate MaxListeners warnings)
+// and must take down the whole owned pdf2zh process tree through the studio
+// process-tree facade.
+// ---------------------------------------------------------------------------
+const PROCESS_TREE_MODULE = '../../packages/server/src/modules/studio/public/process-tree'
+
+describe('research translation queue exit hook hygiene', () => {
+  let killMock: ReturnType<typeof vi.fn>
+
+  beforeEach(async () => {
+    vi.resetModules()
+    vi.doMock(PROCESS_TREE_MODULE, () => ({ killOwnedProcessTree: vi.fn() }))
+    store = await import(STORE_MODULE)
+    service = await import(SERVICE_MODULE)
+    const facade = await import(PROCESS_TREE_MODULE) as { killOwnedProcessTree: ReturnType<typeof vi.fn> }
+    killMock = facade.killOwnedProcessTree
+  })
+
+  afterEach(async () => {
+    service.stopTranslationQueueWorker()
+    store.closeTranslationQueueDb()
+    vi.doUnmock(PROCESS_TREE_MODULE)
+    await new Promise(resolve => setTimeout(resolve, 50))
+  })
+
+  it('kills the owned process tree at exit with one single listener across module reloads', async () => {
+    const pdfPath = writeStubPdf('exit-hygiene.pdf')
+    process.env.PDF2ZH_STUB_MODE = 'slow'
+    const job = service.enqueueTranslationJob({ pdfPath })
+    const deadline = Date.now() + 5000
+    while (store.getTranslationJobRow(job.id)?.status !== 'running') {
+      if (Date.now() > deadline) throw new Error('job never started running')
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+    const listenerCount = process.listenerCount('exit')
+
+    // A fresh module load (vi.resetModules tests/restart) must not register
+    // another process exit listener...
+    vi.resetModules()
+    const fresh = await import(SERVICE_MODULE)
+    expect(process.listenerCount('exit')).toBe(listenerCount)
+
+    // ...and the reloaded module still sees the in-flight child through the
+    // shared hook state, so its exit cleanup kills the whole owned tree via
+    // the studio process-tree facade (Windows taskkill /T /F, not child.kill).
+    fresh.translationQueueExitCleanup()
+    expect(killMock).toHaveBeenCalledTimes(1)
+    const [pid, fallback] = killMock.mock.calls[0] as [number, () => void]
+    expect(Number.isInteger(pid)).toBe(true)
+    expect(pid).toBeGreaterThan(0)
+    expect(typeof fallback).toBe('function')
+    fallback() // release the real stub child so it can exit
+
+    // The killed child reports close and the job leaves 'running'.
+    const deadline2 = Date.now() + 10000
+    while (store.getTranslationJobRow(job.id)?.status !== 'failed') {
+      if (Date.now() > deadline2) throw new Error('job never failed after exit cleanup')
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+    expect(store.getTranslationJobRow(job.id)?.error).toContain('exited with code null')
   })
 })
 

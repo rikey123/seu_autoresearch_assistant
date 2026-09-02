@@ -601,6 +601,16 @@ export async function bootstrap() {
     close: () => workflowScheduleService.stop(),
   })
 
+  // Research-owned resources stop through a bootstrap-registered port: the
+  // pdf2zh translation worker (kills the in-flight child process tree and
+  // closes the queue database it holds) plus the remaining research-owned
+  // databases, in that order.
+  const { shutdownResearchResources } = await import('../modules/research')
+  additionalShutdownSteps.push({
+    name: 'Research translation queue and databases',
+    close: () => shutdownResearchResources(),
+  })
+
   workflowSocketServer = new WorkflowSocketServer(activeGroupChatServer.getIO())
   workflowSocketServer.init()
   additionalShutdownSteps.push({

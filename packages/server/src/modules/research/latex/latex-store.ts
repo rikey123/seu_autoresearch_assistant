@@ -87,6 +87,21 @@ export function getLatexDb(): DatabaseSync {
       finished_at INTEGER
     )`)
     db.exec(`CREATE INDEX IF NOT EXISTS idx_latex_compilations_document ON ${COMPILATIONS_TABLE}(document_id)`)
+    // A compilation cannot survive a server restart: any persisted non-final
+    // row (queued or running) is leftover from an interrupted run and is moved
+    // to failed with an explicit error, following the same startup
+    // reconciliation as rag-store/translation-queue-store. Without this, a
+    // hung "running" row would stay visible forever (the client freshness
+    // window only avoided *new* compiles).
+    db.exec(`UPDATE ${COMPILATIONS_TABLE}
+      SET status = 'failed',
+          errors_json = CASE WHEN errors_json IS NOT NULL AND errors_json <> '' AND errors_json <> '[]'
+            THEN errors_json
+            ELSE '[{"file":"","line":null,"message":"interrupted: server restarted while the compilation was running"}]'
+          END,
+          finished_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+          updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+      WHERE status IN ('queued', 'running')`)
     _db = db
   }
   return _db

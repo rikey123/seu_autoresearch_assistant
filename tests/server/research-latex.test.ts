@@ -173,6 +173,43 @@ describe('latex document store', () => {
     expect(store.getDocument(created.id)).toBeNull()
     expect(store.deleteDocument(created.id)).toBe(false)
   })
+
+  it('reconciles queued and running compilations to failed when the database reopens', () => {
+    const doc = store.createDocument({ title: 'Reconcile', source: 'x' })
+    const queued = store.createCompilation({ document_id: doc.id })
+    const running = store.createCompilation({ document_id: doc.id })
+    store.updateCompilation(running.id, { status: 'running', started_at: Date.now() })
+    // Pre-existing diagnostics survive the reconciliation (COALESCE-style
+    // branch: non-empty errors_json is kept).
+    store.updateCompilation(queued.id, { errors: [{ file: 'pre.tex', line: 1, message: 'pre-existing' }] })
+
+    // A fresh process opens the DB: non-final rows are leftovers and must be
+    // moved to failed with an explicit interrupted error (same rule as
+    // rag-store/translation-queue-store), so the old 30-minute freshness
+    // window is no longer the only recovery path.
+    store.closeLatexDb()
+    const reopened = store.getLatexDb()
+    expect(reopened).toBeTruthy()
+
+    const queuedAfter = store.getCompilation(queued.id)
+    expect(queuedAfter?.status).toBe('failed')
+    expect(queuedAfter?.errors).toEqual([{ file: 'pre.tex', line: 1, message: 'pre-existing' }])
+    expect(queuedAfter?.finished_at).toBeGreaterThan(0)
+
+    const runningAfter = store.getCompilation(running.id)
+    expect(runningAfter?.status).toBe('failed')
+    expect(runningAfter?.errors).toEqual([{
+      file: '',
+      line: null,
+      message: 'interrupted: server restarted while the compilation was running',
+    }])
+    expect(runningAfter?.started_at).toBeGreaterThan(0)
+    expect(runningAfter?.finished_at).toBeGreaterThan(0)
+
+    // A compilation queued after the reopen is untouched.
+    const fresh = store.createCompilation({ document_id: doc.id })
+    expect(fresh.status).toBe('queued')
+  })
 })
 
 describe('tectonic adapter', () => {
@@ -197,6 +234,24 @@ describe('tectonic adapter', () => {
     expect(tectonic.parseTectonicErrors(stderr)).toEqual([
       { file: './main.tex', line: 12, message: 'Undefined control sequence.' },
       { file: './chapters/intro.tex', line: 3, message: 'LaTeX Error: Environment figure undefined.' },
+    ])
+  })
+
+  it('parses severity-prefixed file:line:message summaries from stderr', () => {
+    // Real tectonic stderr prefixes rustc-style summary lines with a severity
+    // word ("error:" is the common shape seen in engine transcripts).
+    const stderr = [
+      'Running TeX ...',
+      'error: bad2.tex:3: unexpected token',
+      'warning: ./chapters/intro.tex:5: undefined reference',
+      'note: ./main.tex:12: font shape undefined',
+      'error: The TeX compiler exited with bad status.',
+    ].join('\n')
+    expect(tectonic.parseTectonicErrors(stderr)).toEqual([
+      { file: 'bad2.tex', line: 3, message: 'unexpected token' },
+      { file: './chapters/intro.tex', line: 5, message: 'undefined reference' },
+      { file: './main.tex', line: 12, message: 'font shape undefined' },
+      { file: '', line: null, message: 'The TeX compiler exited with bad status.' },
     ])
   })
 
@@ -264,6 +319,40 @@ describe('tectonic adapter', () => {
     } finally {
       delete process.env.HERMES_LATEX_COMPILE_TIMEOUT_MS
     }
+  })
+
+  it('preserves multi-byte UTF-8 output split across data chunks', async () => {
+    // stdout/stderr must be accumulated as Buffers and decoded once at the
+    // end; per-chunk toString() replaces the split byte of a UTF-8 sequence
+    // with U+FFFD (LaTeX comments with Chinese text are the common case).
+    const child = new testState.TestEmitter() as any
+    child.stdout = new testState.TestEmitter()
+    child.stderr = new testState.TestEmitter()
+    child.kill = vi.fn()
+    const spawnImpl = vi.fn(() => child) as any
+
+    const run = tectonic.runTectonic({
+      bin: 'tectonic',
+      inputPath: join(home, 'document.tex'),
+      outDir: join(home, 'builds'),
+      spawnImpl,
+    })
+    // '编译错误：第一处' is 9 three-byte CJK/punctuation characters; the split
+    // lands inside the full-width colon sequence (0xEF | 0xBC 0x9A).
+    const stdoutBytes = Buffer.from('编译错误：第一处', 'utf8')
+    const split = Math.floor(stdoutBytes.length / 2)
+    child.stdout.emit('data', stdoutBytes.subarray(0, split))
+    child.stdout.emit('data', stdoutBytes.subarray(split))
+    child.stderr.emit('data', Buffer.from('error: 第'))
+    child.stderr.emit('data', Buffer.from('二处错误'))
+    child.emit('close', 1)
+
+    const result = await run
+    expect(spawnImpl).toHaveBeenCalledTimes(1)
+    expect(result.stdout).toBe('编译错误：第一处')
+    expect(result.stdout).not.toContain('\uFFFD')
+    expect(result.stderr).toBe('error: 第二处错误')
+    expect(result.stderr).not.toContain('\uFFFD')
   })
 
   it('always spawns through an argument array with shell disabled', async () => {

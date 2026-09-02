@@ -101,7 +101,11 @@ export function parseTectonicErrors(stderr: string, limit = 50): TectonicDiagnos
 
     if (diagnostics.length >= limit) break
 
-    const fileLineMessage = line.match(/^([^:\s][^:]*):(\d+):\s*(.+)$/)
+    // rustc-style summary lines may carry a severity prefix, e.g.
+    // "error: ./main.tex:12: Undefined control sequence." or
+    // "warning: bad2.tex:3: ..." — tolerate an optional
+    // error/warning/note/help prefix in front of the file:line:message form.
+    const fileLineMessage = line.match(/^(?:(?:error|warning|note|help):\s*)?([^:\s][^:]*):(\d+):\s*(.+)$/)
     if (fileLineMessage && TEX_SOURCE_PATTERN.test(fileLineMessage[1].trim())) {
       pushDiagnostic(diagnostics, seen, {
         file: normalizeFilePath(fileLineMessage[1].trim()),
@@ -193,10 +197,26 @@ export function runTectonic(options: {
   })
 
   return new Promise<TectonicRunResult>((resolve) => {
-    let stdout = ''
-    let stderr = ''
+    // Accumulate raw Buffers and decode once at the end: decoding per chunk
+    // would corrupt multi-byte UTF-8 sequences that span a chunk boundary
+    // (Chinese comments in LaTeX sources are the common case).
+    let stdoutParts: Buffer[] = []
+    let stderrParts: Buffer[] = []
     let timedOut = false
     let settled = false
+
+    const appendOutput = (parts: Buffer[], chunk: Buffer): void => {
+      parts.push(chunk)
+      let total = 0
+      for (const part of parts) total += part.length
+      if (total > 256_000) {
+        // Keep only the newest ~128 KB so a runaway log cannot exhaust memory;
+        // copy the tail so it does not retain the whole joined buffer.
+        const joined = Buffer.concat(parts)
+        parts.length = 0
+        parts.push(Buffer.from(joined.subarray(Math.max(0, joined.length - 128_000))))
+      }
+    }
 
     const timer = setTimeout(() => {
       timedOut = true
@@ -206,18 +226,18 @@ export function runTectonic(options: {
     }, timeoutMs)
 
     child.stdout?.on('data', (chunk: Buffer | string) => {
-      stdout += chunk.toString()
-      if (stdout.length > 256_000) stdout = stdout.slice(-128_000)
+      appendOutput(stdoutParts, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
     })
     child.stderr?.on('data', (chunk: Buffer | string) => {
-      stderr += chunk.toString()
-      if (stderr.length > 256_000) stderr = stderr.slice(-128_000)
+      appendOutput(stderrParts, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
     })
 
     const finish = (exitCode: number | null) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      const stdout = Buffer.concat(stdoutParts).toString('utf8')
+      const stderr = Buffer.concat(stderrParts).toString('utf8')
       resolve({
         exit_code: timedOut ? null : exitCode,
         timed_out: timedOut,
@@ -229,7 +249,7 @@ export function runTectonic(options: {
     }
 
     child.on('error', (error: Error) => {
-      stderr += `\nerror: failed to launch tectonic: ${error.message}`
+      stderrParts.push(Buffer.from(`\nerror: failed to launch tectonic: ${error.message}`))
       finish(null)
     })
     child.on('close', (code: number | null) => finish(code))
