@@ -103,6 +103,29 @@ const CANNED_BAR_SVG = [
 
 const FIGURE_AGENT_SVG_OUTPUT = '```svg\n' + CANNED_BAR_SVG + '\n```'
 
+// Feature-coverage SVG for the v2 pptx mapping: exercises freeform paths
+// (bezier + S/Z, polyline + Z, A-arc), gradient fill, rotate transforms
+// (centered and off-center), and tspans (paragraph break + inline run).
+const FEATURE_BAR_SVG = [
+  '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560">',
+  '  <defs>',
+  '    <linearGradient id="heat" x1="0" y1="0" x2="1" y2="0">',
+  '      <stop offset="0" stop-color="#FF0000"/>',
+  '      <stop offset="1" stop-color="#0000FF"/>',
+  '    </linearGradient>',
+  '  </defs>',
+  '  <rect x="0" y="0" width="900" height="560" fill="#ffffff"/>',
+  '  <path d="M 100 100 C 140 60, 180 60, 220 100 S 300 140, 340 100 Z" fill="url(#heat)" stroke="#1f2430" stroke-width="2"/>',
+  '  <path d="M 400 80 L 480 80 L 480 140 Z" fill="none" stroke="#D55E00" stroke-width="2"/>',
+  '  <path d="M 100 480 A 60 60 0 0 1 220 480" fill="none" stroke="#0072B2" stroke-width="2"/>',
+  '  <rect x="600" y="300" width="160" height="80" fill="#0072B2" transform="rotate(45 680 340)"/>',
+  '  <rect x="400" y="200" width="100" height="60" fill="#009E73" transform="rotate(30 450 280)"/>',
+  '  <text x="100" y="300" font-size="16" fill="#1f2430">Panel A <tspan x="100" dy="20" font-size="12" fill="#D55E00">sub-line</tspan><tspan font-size="10" fill="#6b7280">inline</tspan></text>',
+  '</svg>',
+].join('\n')
+
+const FEATURE_AGENT_SVG_OUTPUT = '```svg\n' + FEATURE_BAR_SVG + '\n```'
+
 const BRIEF = {
   title: 'Dose-Response',
   figureType: 'bar',
@@ -385,6 +408,110 @@ describe.skipIf(!realPptxReady)('figure-drawing gated real pptx export (python-p
     expect(shapeCount).toBeGreaterThanOrEqual(10)
     expect(widthPx).toBe(900)
     expect(heightPx).toBe(560)
+  }, 90000)
+
+  it('maps v2 SVG features (paths, rotation, gradient, tspans) into the exported pptx', async () => {
+    await loadNatureResearchPack()
+    process.env.RESEARCH_FIGURE_PPTX_PYTHON = gatedPptxPython
+    process.env.RESEARCH_FIGURE_PPTX_SIDECAR = SIDE_CAR
+    // Swap the canned agent output for the v2 feature-coverage SVG: the whole
+    // intake → agent → render → pptx chain still runs for real, only the chat
+    // layer is mocked.
+    chatRunMock.runAndWait.mockImplementation(async (input: { session_id: string; input: string }) => {
+      const message = String(input.input)
+      if (!message.includes('科研绘图助手')) throw new Error(`unexpected agent node input: ${message.slice(0, 160)}`)
+      chatRunMock.sessionOutputs.set(input.session_id, FEATURE_AGENT_SVG_OUTPUT)
+      return { ok: true, output: FEATURE_AGENT_SVG_OUTPUT }
+    })
+    const outDir = join(e2eTestRoot, 'figure-run-pptx-features')
+    const result = await runFigureWorkflow({ ...BRIEF, outDir }, 'figure pptx v2 features')
+    expect(result.run.status).toBe('completed')
+    expect(nodeRow(result, 'fd-render').status).toBe('completed')
+
+    // The pptx node forwards the sidecar's v2 feature counters additively on
+    // top of the unchanged v1 stdout contract.
+    const pptx = parseNodeOutput(nodeRow(result, 'fd-pptx'))
+    expect(pptx.pptxExported, JSON.stringify(pptx)).toBe(true)
+    expect(pptx.svgFeaturesMapped).toMatchObject({ path: 3, rotate: 2, gradientFill: 1, tspanParagraph: 1, tspanRun: 1 })
+    expect(pptx.svgFeaturesSkipped).toMatchObject({ arcApproximated: 1 })
+
+    // Round-trip probe: dump per-shape geometry/fill/text via python-pptx.
+    const pptxPath = String(pptx.pptxPath)
+    const probeScript = join(outDir, 'probe.py')
+    writeFileSync(probeScript, [
+      'import json',
+      'import sys',
+      'from pptx import Presentation',
+      'from pptx.enum.dml import MSO_FILL',
+      '',
+      'presentation = Presentation(sys.argv[1])',
+      'shapes = []',
+      'for shape in presentation.slides[0].shapes:',
+      '    item = {',
+      '        "type": str(shape.shape_type),',
+      '        "rotation": float(shape.rotation),',
+      '        "leftPx": round(shape.left / 9525, 1),',
+      '        "topPx": round(shape.top / 9525, 1),',
+      '    }',
+      '    try:',
+      '        if shape.fill.type == MSO_FILL.SOLID:',
+      '            item["fill"] = str(shape.fill.fore_color.rgb)',
+      '    except Exception:',
+      '        pass',
+      '    if shape.has_text_frame:',
+      '        item["paragraphs"] = [',
+      '            [',
+      '                {',
+      '                    "text": run.text,',
+      '                    "sizePt": (run.font.size.pt if run.font.size else None),',
+      '                    "color": (str(run.font.color.rgb) if (run.font.color is not None and run.font.color.type is not None) else None),',
+      '                }',
+      '                for run in paragraph.runs',
+      '            ]',
+      '            for paragraph in shape.text_frame.paragraphs',
+      '        ]',
+      '    shapes.append(item)',
+      'print(json.dumps(shapes))',
+    ].join('\n'), 'utf8')
+    const probe = execFileSync(gatedPptxPython, [probeScript, pptxPath], { encoding: 'utf8', shell: false })
+    const shapes = JSON.parse(probe.trim().split('\n').pop() || '[]') as Array<{
+      type: string
+      rotation: number
+      leftPx: number
+      topPx: number
+      fill?: string
+      paragraphs?: Array<Array<{ text: string; sizePt: number | null; color: string | null }>>
+    }>
+
+    // path: bezier + polyline subpaths land as native FREEFORM shapes; the
+    // A-arc is downgraded to a polyline freeform at its expected position.
+    const freeforms = shapes.filter(shape => shape.type.includes('FREEFORM'))
+    expect(freeforms).toHaveLength(3)
+    // linearGradient url(#heat) resolves to the midpoint blend of #FF0000 and
+    // #0000FF: #800080. Strokes survive verbatim on all three freeforms.
+    expect(freeforms.find(shape => shape.fill === '800080')).toBeTruthy()
+    expect(freeforms.find(shape => shape.leftPx === 100 && shape.topPx === 420)).toBeTruthy()
+
+    // rotate about the shape's own center keeps left/top and sets rotation.
+    const centeredRotation = shapes.find(shape => Math.abs(shape.rotation - 45) < 0.01)
+    expect(centeredRotation).toMatchObject({ leftPx: 600, topPx: 300 })
+    // rotate around a FOREIGN pivot (450,280) orbits the rect center (450,230)
+    // by 30 degrees to (475, 236.7) while the shape itself rotates 30 degrees.
+    const orbitedRotation = shapes.find(shape => Math.abs(shape.rotation - 30) < 0.01)
+    expect(orbitedRotation).toBeDefined()
+    expect(Math.abs(orbitedRotation!.leftPx - 425)).toBeLessThanOrEqual(1)
+    expect(Math.abs(orbitedRotation!.topPx - 206.7)).toBeLessThanOrEqual(1)
+
+    // tspan: baseline-shifting tspan becomes a second paragraph in the SAME
+    // text frame; the style-only trailing tspan becomes a second run there,
+    // each carrying its own font-size (px*0.75pt) and fill color overrides.
+    const multiParagraph = shapes.find(shape => shape.paragraphs?.length === 2)
+    expect(multiParagraph).toBeDefined()
+    const [firstLine, secondLine] = multiParagraph!.paragraphs!
+    expect(firstLine[0]).toMatchObject({ sizePt: 12, color: '1F2430' })
+    expect(secondLine).toHaveLength(2)
+    expect(secondLine[0]).toMatchObject({ text: 'sub-line', sizePt: 9, color: 'D55E00' })
+    expect(secondLine[1]).toMatchObject({ text: 'inline', sizePt: 7.5, color: '6B7280' })
   }, 90000)
 })
 
