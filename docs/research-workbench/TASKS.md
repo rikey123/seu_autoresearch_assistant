@@ -44,10 +44,12 @@
 | T2.1a | 画布节点 type 透传 + 只读防护（先行封堵静默改写；基座改动 BC-1） | feature/p2-T1a-client-guard | agent 分支零变化；未知类型往返无损；11 locale 齐全 | ✅ 已合入 main（b902ae0 → merge 4f80927，pm 验收通过） |
 | T2.1b | run-store `output_json` 存储列（确定性输出落库；基座改动 BC-2） | feature/p2-T1b-output-column | 迁移+读写单测绿；既有测试零回归 | ✅ 已合入 main（4cadcdd → merge a196c85，pm 验收通过） |
 | T2.1c | 引擎分发：normalize 类型分支 + 确定性执行器（DI 注入）+ 输出捕获/rerun 恢复切换（基座改动 BC-3） | feature/p2-T1c-engine-dispatch | 单测覆盖 5 种节点类型；改动集中登记、upstream 可同步 | ✅ 已合入 main（0a59987 → merge 55fdba1，pm 验收通过：新增 9 用例 + 全量回归 211 绿 + build） |
-| T2.2 | 模板 literature-review + paper-translate（翻译走 API） | feature/p2-T2-templates | 端到端跑通一次（可 mock LLM） |
+| T2.2 | 模板 literature-review + paper-translate（翻译走 API） | feature/p2-T2-templates | 端到端跑通一次（可 mock LLM） | ✅ 已合入 main（65bcab1 + 654e42d 引擎协议适配修复 → merge 7dcfbe9；审查两轮：首轮 request-changes 指出 PT 链路不适配引擎包装输入，修复后模板级 e2e 2/2 + research 22/22 + 引擎 155/155 绿，pm 验收通过） |
 | T2.3 | 画布适配科研节点（前端，含未知节点兜底） | feature/p2-T3-canvas | 新节点可拖拽配置 | ✅ 已合入 main（d0fc4e5 → merge 8a323ce，pm 验收通过：46/46 实跑 + build） |
-| T2.4 | overnight-research 批处理模板 | feature/p2-T4-overnight | 队列+晨报 HTML 产物 |
-| **审查B** | 审查员单节点正确性 + **Codex 大阶段评审 1**（引擎集成设计） | — | — |
+| T2.4 | overnight-research 批处理模板 | feature/p2-T4-overnight | 队列+晨报 HTML 产物 | 🔄 施工中（w13-overnight，2026-09-02 派单） |
+| T2.F1 | codex 评审 F1 修复：引擎生命周期加固（基座改动 BC-5） | feature/p2-fix-engine-lifecycle | 停止可中止确定性脚本/进程树清理/输出上限/rerun admission+CAS | ✅ 已合入 main（4626773 + 8a67795 测试超时修复 → merge f9de080；审查通过：deterministic 13/13 + manager 128/128 + tests/server 全量零回归） |
+| T2.F2 | codex 评审 F2 修复：客户端契约（基座改动 BC-6） | feature/p2-fix-client-contracts | 未知类型真正无损往返/output_json 类型同步/script runtime 守卫/失败详情 | ✅ 已合入 main（afa98f0 → merge 73c210a；审查 approve：客户端 1498 用例 + vue-tsc + build 绿） |
+| **审查B** | 审查员单节点正确性 + **Codex 大阶段评审 1**（引擎集成设计） | — | — | ⏳ 待 T2.4 合入后执行（BC-5/BC-6 阻断项已修复合入） |
 
 ## P3 论文工作台（W8-W10）
 
