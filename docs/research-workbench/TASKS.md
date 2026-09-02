@@ -78,17 +78,26 @@
 | T5.2 | 用户手册（中文）+ 模板编写指南 | feature/p5-T2-docs | 文档评审过 | ✅ 已合入 main（dc896b2 → merge fb3f0df；用户手册 12 章 + 模板编写指南 9 节，事实核对 15+ 点与 main 一致；截图待补为已知限制） |
 | **审查D** | 审查员 + **Codex 大阶段评审 3**（整体验收） | — | — | ✅ 通过（2026-09-02 对 P4 合并后 main 评审 + P5 合入后最终回归：research+引擎 268 绿/4 门控、**客户端 1591/1591**、**全量 e2e 139 通过**、边界与 harness 检查通过、build 绿；P4 四工单验收标准逐条满足） |
 
-## 遗留打磨清单（各审查 P2/P3 备忘汇总，P5 后统一处理或随下一迭代）
+## 遗留打磨清单（各审查 P2/P3 备忘汇总）
 
-- T2.1c/审查B 引擎侧：rerun JSON-fallback 与 preflight 409 无直接测试；controller 层 output_json 响应形状测试缺；executor DI 非 Error、持久化失败、edge evidence 矩阵、并行确定性节点未全覆盖；canvas 测试部分仍是源码字符串断言；POSIX 进程树清理无覆盖；运行时 locale smoke 缺。
-- T3.1 论文库：HEAD 请求 fd 滞留；零字节文件+后缀区间 500（仅外部篡改可触达）；by-name 无 HEAD；RTL 物理方向 CSS 一处；API 响应含内部 file_path。
-- T3.2 翻译队列：exit 兜底为单进程 kill 非杀树；优雅关停未接 stopTranslationQueueWorker；out_dir 无 appHome 约束（本地场景可接受）；测试期 MaxListeners 警告。
-- T3.3 LaTeX：重启后悬挂 queued/running 无启动对账（30min 新鲜度窗口兜底）；tectonic rustc 前缀摘要行不参与定位（经典 transcript 兜底）；多字节 UTF-8 跨 chunk 可能切坏；builds 目录无回收。
-- T4.1 RAG：sidecarEnv 名实不符（透传实为全环境继承，注释/测试名待改口径）；重启后僵尸 queued 行不清；客户端轮询无界且切库后 pollQuestion 可能卡死（切库+轮询 id 不匹配）；citations paperId 未校验属库（纵深防御）。
-- T4.2 聊天 KB：IME 合成结束后 @ 浮层状态不刷新；15min deadline 无 store 级测试；浮层开启时移动光标再确认可致前缀复制；轮询无瞬时错误容错。
-- T4.3 VCP：聊天消息内带 token 的论文 URL 建议剥 token（P2）；iframe 点击注释措辞；卡片高度档位无拖拽。
-- T4.4 Skillpack：profile 参数未校验 ∈ 已知列表（基座既有行为，建议 facade 统一收紧）。
-- 环境（非代码）：主工作树 CRLF 检出导致 3 个既有客户端测试（message-list-run-started-at 等）本地失败，worktree/CI 不受影响，基线 91cd2b9 已如此。
+### ✅ 已清（2026-09-02，P6 三张并行工单合入 main 1567e62：709e8b3/ec578c4/8c34b70）
+
+- T2.1c/审查B 引擎侧：rerun JSON-fallback 与 preflight 409 直接测试；controller 层 output_json 响应形状测试；executor 非 Error/持久化失败/行消失/edge evidence 矩阵（含 feedback loop）/多节点并行；POSIX 进程树清理（厘清并记录注释 + POSIX 平台矩阵单测）；canvas 真实挂载补强 3 例；运行时 locale smoke（11 语言 × createI18n 编译）。
+- T3.1 论文库：HEAD 不再构造读流（fd 滞留消除）；零字节文件+后缀区间 → 416；by-name/file 补 HEAD；RTL 物理方向改 `inset-inline-end`；API 响应脱敏 file_path（统一走 PaperView 视图）。
+- T3.2 翻译队列：exit 兜底改 killOwnedProcessTree 杀树；优雅关停接入基座 additionalShutdownSteps（BC-10）；out_dir 拒绝相对路径（**评估决策**：任意绝对路径保留，注释记录理由）；exit hook 单次安装（跨 resetModules 共享状态）。
+- T3.3 LaTeX：启动对账 queued/running → failed（30min 窗口降为兜底）；tectonic `error:` 前缀摘要行解析；stdout/stderr 改 Buffer 分片（UTF-8 跨 chunk 修复）。
+- T4.1 RAG：sidecarEnv 改白名单构造（UNRELATED_SECRET 剔除断言）；重启 queued+running 双态清理；客户端轮询 15min 护栏 + 切库/id 不匹配终止；citations paperId 按库成员过滤。
+- T4.2 聊天 KB：compositionend 刷新 @ 浮层；15min deadline store 级测试；光标移动后确认的前缀复制修复；轮询瞬时错误容忍 2 次。
+- T4.3 VCP：聊天消息 URL 剥 token（paperFilePath 无 token 路径）；两处 iframe 冒泡注释措辞纠正。
+- T4.4 Skillpack：profile 参数校验 ∈ 已知名单（list/load/unload 400）。
+- 环境（非代码）：CRLF 敏感的两个既有测试已修（message-list-run-started-at、app-connections-panel，随 P5 合入）。
+
+### ⏳ 剩余（评估后保留，待后续迭代）
+
+- T3.3：`builds/<uuid>` 产物目录无回收（与 research 模块现状一致，非阻断）。
+- T4.3：VCP 卡片高度三档循环无拖拽调高（读影响小）。
+- 引擎（审查B 遗留低优先）：validate/render executor 仍为 null（明示阶段性状态）；title-only 契约靠两端约定无共享 schema（阶段接受）。
+- RAG：库级增量索引/落盘索引（大库优化，非功能缺陷）。
 
 ## 并行策略
 
