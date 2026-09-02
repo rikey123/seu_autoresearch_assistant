@@ -299,6 +299,356 @@ process.stdin.on('end', function () {
   }));
 });`
 
+// Queue intake: reads a JSONL batch queue (one item per line, fields
+// id/type/payload), validates and dedupes it deterministically, and chunks the
+// surviving items into fixed-size batches. The entry node's authored input is
+// either a bare absolute JSONL path or JSON {"queuePath": "...", "batchSize": n}.
+const OR_QUEUE_INTAKE_CODE = String.raw`'use strict';
+${ENGINE_WRAPPER_HELPERS}var rawInput = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', function (chunk) { rawInput += chunk; });
+process.stdin.on('end', function () {
+  var fs = require('node:fs');
+  var path = require('node:path');
+  var text = stripEngineWrapperLines(rawInput);
+  if (!text) {
+    console.error('queue intake node received no input: pass JSON {"queuePath": "<absolute JSONL path>", "batchSize": 2} or a bare absolute path');
+    process.exit(1);
+  }
+  var queuePath = '';
+  var batchSize = 3;
+  var parsed = parseJsonPayload(text);
+  if (parsed && typeof parsed.queuePath === 'string') {
+    queuePath = parsed.queuePath.trim();
+    if (parsed.batchSize !== undefined && parsed.batchSize !== null) {
+      var wanted = Number(parsed.batchSize);
+      if (!Number.isInteger(wanted) || wanted < 1) {
+        console.error('batchSize must be a positive integer, received: ' + String(parsed.batchSize));
+        process.exit(1);
+      }
+      batchSize = wanted;
+    }
+  } else {
+    queuePath = text.split(/\r?\n/)[0].trim();
+  }
+  if (!queuePath) {
+    console.error('queuePath is required');
+    process.exit(1);
+  }
+  if (!path.isAbsolute(queuePath)) {
+    console.error('queuePath must be an absolute path, received: ' + queuePath);
+    process.exit(1);
+  }
+  var stat = null;
+  try {
+    stat = fs.statSync(queuePath);
+  } catch (error) {
+    console.error('queue file not found: ' + queuePath);
+    process.exit(1);
+  }
+  if (!stat.isFile()) {
+    console.error('queuePath is not a regular file: ' + queuePath);
+    process.exit(1);
+  }
+  var raw = fs.readFileSync(queuePath, 'utf8');
+  // A trailing newline at end-of-file is normal JSONL formatting, not an
+  // extra blank queue line.
+  if (raw.slice(-1) === '\n') raw = raw.slice(0, -1);
+  var lines = raw.split(/\r?\n/);
+  var totals = { lines: 0, blank: 0, valid: 0, duplicates: 0, invalid: 0 };
+  var duplicateIds = [];
+  var invalidLines = [];
+  var items = [];
+  var seenIds = Object.create(null);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    var lineNumber = i + 1;
+    if (!line) { totals.blank += 1; continue; }
+    totals.lines += 1;
+    var item = null;
+    try {
+      var candidate = JSON.parse(line);
+      if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) item = candidate;
+    } catch (error) {}
+    if (!item) {
+      totals.invalid += 1;
+      invalidLines.push({ line: lineNumber, reason: 'line is not a JSON object' });
+      continue;
+    }
+    if (typeof item.id !== 'string' || !item.id.trim()) {
+      totals.invalid += 1;
+      invalidLines.push({ line: lineNumber, reason: 'item.id must be a non-empty string' });
+      continue;
+    }
+    if (typeof item.type !== 'string' || !item.type.trim()) {
+      totals.invalid += 1;
+      invalidLines.push({ line: lineNumber, reason: 'item.type must be a non-empty string' });
+      continue;
+    }
+    if (seenIds[item.id]) {
+      totals.duplicates += 1;
+      duplicateIds.push(item.id);
+      continue;
+    }
+    seenIds[item.id] = true;
+    items.push({ id: item.id, type: item.type, payload: item.payload === undefined ? null : item.payload });
+    totals.valid += 1;
+  }
+  var batches = [];
+  for (var start = 0; start < items.length; start += batchSize) {
+    var slice = items.slice(start, start + batchSize);
+    batches.push({
+      batchIndex: batches.length + 1,
+      itemIds: slice.map(function (item) { return item.id; }),
+      items: slice,
+    });
+  }
+  var planItems = items.map(function (item, index) {
+    return { id: item.id, type: item.type, batchIndex: Math.floor(index / batchSize) + 1 };
+  });
+  process.stdout.write(JSON.stringify({
+    queuePath: queuePath,
+    batchSize: batchSize,
+    totals: totals,
+    duplicateIds: duplicateIds,
+    invalidLines: invalidLines,
+    batchCount: batches.length,
+    batches: batches,
+    items: planItems,
+  }));
+});`
+
+// Aggregation: joins the queue plan (from the intake script node) with the raw
+// agent execution output (both arrive as "[Upstream: ...]" sections of one
+// wrapped message, so the section headers are the delimiters — wrapper lines
+// must NOT be stripped before splitting). Result lines are parsed tolerantly
+// (JSON objects with an id field, bullets/code fences ignored); every planned
+// item without a matching result is accounted as missing, never silently
+// dropped, so the morning report can prove the queue was fully consumed.
+const OR_BATCH_AGGREGATE_CODE = String.raw`'use strict';
+${ENGINE_WRAPPER_HELPERS}function splitUpstreamSections(text) {
+  var sections = [];
+  var current = null;
+  var lines = text.split(/\r?\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var header = line.match(/^\[Upstream: (.*?)\]\s*$/);
+    if (header) {
+      current = { title: header[1], lines: [] };
+      sections.push(current);
+      continue;
+    }
+    var trimmed = line.trim();
+    if (trimmed === '[Workflow upstream results]') continue;
+    if (trimmed === '[Current task]') break;
+    if (current) current.lines.push(line);
+  }
+  return sections;
+}
+function parseResultLine(line) {
+  var trimmed = line.trim();
+  if (!trimmed || trimmed.indexOf('\x60\x60\x60') === 0) return null;
+  if (trimmed.charAt(0) === '-' || trimmed.charAt(0) === '*') trimmed = trimmed.slice(1).trim();
+  if (!trimmed || trimmed.charAt(0) !== '{') return null;
+  try {
+    var candidate = JSON.parse(trimmed);
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+      && typeof candidate.id === 'string' && candidate.id.trim()) return candidate;
+  } catch (error) {}
+  return null;
+}
+var rawInput = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', function (chunk) { rawInput += chunk; });
+process.stdin.on('end', function () {
+  var sections = splitUpstreamSections(rawInput);
+  var plan = null;
+  var planSectionIndex = -1;
+  for (var s = 0; s < sections.length; s++) {
+    var sectionText = sections[s].lines.join('\n').trim();
+    var parsed = sectionText ? parseJsonPayload(sectionText) : null;
+    if (!plan && parsed && typeof parsed.queuePath === 'string' && Array.isArray(parsed.batches)) {
+      plan = parsed;
+      planSectionIndex = s;
+    }
+  }
+  if (!plan || !Array.isArray(plan.items)) {
+    console.error('aggregate node could not find the queue plan JSON in its upstream inputs');
+    process.exit(1);
+  }
+  var resultLines = [];
+  for (var r = 0; r < sections.length; r++) {
+    if (r === planSectionIndex) continue;
+    resultLines = resultLines.concat(sections[r].lines);
+  }
+  var resultsById = Object.create(null);
+  var unexpected = [];
+  for (var i = 0; i < resultLines.length; i++) {
+    var result = parseResultLine(resultLines[i]);
+    if (!result) continue;
+    var known = false;
+    for (var p = 0; p < plan.items.length; p++) {
+      if (plan.items[p].id === result.id) { known = true; break; }
+    }
+    if (!known) {
+      unexpected.push({ id: result.id, reason: '上游返回了计划之外的结果' });
+      continue;
+    }
+    if (!resultsById[result.id]) resultsById[result.id] = result;
+  }
+  var stats = { total: plan.items.length, success: 0, failed: 0, missing: 0 };
+  var items = [];
+  var failures = [];
+  for (var j = 0; j < plan.items.length; j++) {
+    var planned = plan.items[j];
+    var result = resultsById[planned.id] || null;
+    var status = 'missing';
+    var summary = '';
+    var reason = '';
+    if (result) {
+      summary = typeof result.summary === 'string' ? result.summary : '';
+      if (result.status === 'success') {
+        status = 'success';
+        stats.success += 1;
+      } else {
+        status = 'failed';
+        stats.failed += 1;
+        if (typeof result.reason === 'string' && result.reason) reason = result.reason;
+        else if (result.status === 'failed') reason = summary || '未提供失败原因';
+        else reason = '未知状态: ' + String(result.status);
+      }
+    } else {
+      stats.missing += 1;
+      reason = '上游批处理节点未返回该条目的结果';
+    }
+    var row = { id: planned.id, type: planned.type, batchIndex: planned.batchIndex, status: status, summary: summary };
+    if (status !== 'success') {
+      row.reason = reason;
+      failures.push({ id: planned.id, type: planned.type, batchIndex: planned.batchIndex, status: status, reason: reason });
+    }
+    items.push(row);
+  }
+  var completionRate = stats.total ? Math.round((stats.success / stats.total) * 1000) / 10 : 0;
+  process.stdout.write(JSON.stringify({
+    queue: {
+      queuePath: plan.queuePath,
+      batchSize: plan.batchSize,
+      batchCount: Array.isArray(plan.batches) ? plan.batches.length : 0,
+      totals: plan.totals,
+      duplicateIds: plan.duplicateIds,
+      invalidLines: plan.invalidLines,
+    },
+    stats: { total: stats.total, success: stats.success, failed: stats.failed, missing: stats.missing, completionRate: completionRate },
+    items: items,
+    failures: failures,
+    unexpected: unexpected,
+  }));
+});`
+
+// Morning report: consumes the aggregation ledger JSON and renders the ARIS
+// morning report HTML (batch statistics, per-item results, failures with
+// reasons, next-step placeholder) next to the queue file.
+const OR_MORNING_REPORT_CODE = String.raw`'use strict';
+${ENGINE_WRAPPER_HELPERS}var rawInput = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', function (chunk) { rawInput += chunk; });
+process.stdin.on('end', function () {
+  var fs = require('node:fs');
+  var path = require('node:path');
+  var source = stripEngineWrapperLines(rawInput);
+  var ledger = source ? parseJsonPayload(source) : null;
+  if (!ledger || !ledger.queue || typeof ledger.queue.queuePath !== 'string'
+    || !ledger.stats || !Array.isArray(ledger.items)) {
+    console.error('morning report node expects the aggregation ledger JSON from its upstream');
+    process.exit(1);
+  }
+  function escapeHtml(text) {
+    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function statusLabel(status) {
+    return status === 'success' ? '成功' : (status === 'failed' ? '失败' : '缺失');
+  }
+  function statRow(label, value) {
+    return '<tr><th>' + escapeHtml(label) + '</th><td>' + escapeHtml(value === undefined || value === null ? '-' : String(value)) + '</td></tr>';
+  }
+  var stats = ledger.stats;
+  var totals = ledger.queue.totals || {};
+  var html = [];
+  html.push('<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8" />\n<title>过夜自主科研晨报</title>\n<style>\n'
+    + 'body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; max-width: 860px; margin: 40px auto; padding: 0 24px; line-height: 1.7; color: #1f2430; }\n'
+    + 'h1, h2 { line-height: 1.3; }\n'
+    + 'table { border-collapse: collapse; width: 100%; margin: 12px 0; }\n'
+    + 'th, td { border: 1px solid #d7dde8; padding: 6px 10px; text-align: left; font-size: 14px; vertical-align: top; }\n'
+    + 'th { background: #f2f5fa; white-space: nowrap; }\n'
+    + '.status-success { color: #16794f; }\n'
+    + '.status-failed { color: #b42318; }\n'
+    + '.status-missing { color: #b54708; }\n'
+    + '</style>\n</head>\n<body>\n');
+  html.push('<h1>过夜自主科研晨报</h1>');
+  html.push('<p>生成时间：' + escapeHtml(new Date().toISOString()) + '；队列文件：<code>' + escapeHtml(ledger.queue.queuePath) + '</code></p>');
+  html.push('<h2>一、批处理统计</h2>');
+  html.push('<table><tbody>'
+    + statRow('队列行数', totals.lines)
+    + statRow('有效条目', totals.valid)
+    + statRow('重复剔除', totals.duplicates)
+    + statRow('无效行', totals.invalid)
+    + statRow('批次数', ledger.queue.batchCount)
+    + statRow('计划条目', stats.total)
+    + statRow('成功', stats.success)
+    + statRow('失败', stats.failed)
+    + statRow('缺失', stats.missing)
+    + statRow('完成率', stats.completionRate + '%')
+    + '</tbody></table>');
+  var duplicateIds = Array.isArray(ledger.queue.duplicateIds) ? ledger.queue.duplicateIds : [];
+  if (duplicateIds.length) {
+    html.push('<p>重复剔除的条目 id：' + escapeHtml(duplicateIds.join(', ')) + '</p>');
+  }
+  var invalidLines = Array.isArray(ledger.queue.invalidLines) ? ledger.queue.invalidLines : [];
+  if (invalidLines.length) {
+    html.push('<p>无效行：' + escapeHtml(invalidLines.map(function (row) {
+      return '第 ' + row.line + ' 行（' + row.reason + '）';
+    }).join('；')) + '</p>');
+  }
+  html.push('<h2>二、逐项结果清单</h2>');
+  html.push('<table><thead><tr><th>编号</th><th>类型</th><th>批次</th><th>状态</th><th>结果摘要</th></tr></thead><tbody>');
+  for (var i = 0; i < ledger.items.length; i++) {
+    var item = ledger.items[i];
+    html.push('<tr><td>' + escapeHtml(item.id) + '</td><td>' + escapeHtml(item.type) + '</td><td>' + escapeHtml(item.batchIndex)
+      + '</td><td class="status-' + escapeHtml(item.status) + '">' + statusLabel(item.status) + '</td><td>'
+      + escapeHtml(item.summary || item.reason || '-') + '</td></tr>');
+  }
+  html.push('</tbody></table>');
+  html.push('<h2>三、失败项与原因</h2>');
+  var failures = Array.isArray(ledger.failures) ? ledger.failures : [];
+  if (!failures.length) {
+    html.push('<p>本次运行无失败项。</p>');
+  } else {
+    html.push('<table><thead><tr><th>编号</th><th>类型</th><th>状态</th><th>原因</th></tr></thead><tbody>');
+    for (var f = 0; f < failures.length; f++) {
+      html.push('<tr><td>' + escapeHtml(failures[f].id) + '</td><td>' + escapeHtml(failures[f].type) + '</td><td>'
+        + statusLabel(failures[f].status) + '</td><td>' + escapeHtml(failures[f].reason) + '</td></tr>');
+    }
+    html.push('</tbody></table>');
+  }
+  html.push('<h2>四、下一步建议</h2>');
+  html.push('<p>（占位）下一步建议将由后续版本自动生成：基于失败项与缺失项给出重试/补充实验建议，并汇总需人工复核的事项。</p>');
+  var unexpected = Array.isArray(ledger.unexpected) ? ledger.unexpected : [];
+  if (unexpected.length) {
+    html.push('<p>计划外结果：' + escapeHtml(unexpected.map(function (row) { return row.id; }).join(', ')) + '</p>');
+  }
+  html.push('</body>\n</html>');
+  var document = html.join('\n');
+  var reportPath = path.join(path.dirname(ledger.queue.queuePath), 'morning-report.html');
+  fs.writeFileSync(reportPath, document, 'utf8');
+  process.stdout.write(JSON.stringify({
+    format: 'html',
+    title: '过夜自主科研晨报',
+    reportPath: reportPath,
+    bytes: Buffer.byteLength(document),
+    stats: stats,
+  }));
+});`
+
 function nodePosition(index: number): { x: number; y: number } {
   return { x: 80 + index * 320, y: 120 }
 }
@@ -449,5 +799,62 @@ const paperTranslate: ResearchWorkflowTemplate = {
   ],
 }
 
+// ARIS-style overnight batch research (DESIGN.md §3): a JSONL task queue is
+// validated/deduped/chunked deterministically, a single agent node executes the
+// planned batches (the engine delegates to the configured chat runtime), a
+// script node joins the plan with the agent output into an audited ledger, and
+// a final script node renders the morning report HTML. The diamond edge
+// (intake -> aggregate) is what lets the aggregation node reconcile the plan
+// against the agent output deterministically.
+const overnightResearch: ResearchWorkflowTemplate = {
+  id: 'overnight-research',
+  name: '过夜自主科研',
+  description: 'ARIS 式批处理工作流：JSONL 任务队列接入（校验/去重/分批）→ agent 逐批执行 → 确定性逐批聚合与进度统计 → 晨报 HTML 产物。',
+  profile: 'default',
+  steps: ['队列接入', '批处理执行', '逐批聚合', '晨报报告'],
+  nodes: [
+    scriptTemplateNode({
+      id: 'or-queue-intake',
+      title: '队列接入',
+      position: nodePosition(0),
+      code: OR_QUEUE_INTAKE_CODE,
+    }),
+    agentTemplateNode({
+      id: 'or-batch-executor',
+      title: '批处理执行',
+      position: nodePosition(1),
+      input: [
+        '你是过夜批处理执行助手。上游输入是队列接入节点产出的批次计划 JSON（batches 数组，每批含 items：id/type/payload）。',
+        '逐批执行计划中的每个条目：',
+        '1. type 为 literature：围绕 payload 的 title/query 产出一条文献要点摘要（一句话）。',
+        '2. type 为 experiment：说明该实验任务的执行结果与结论（一句话）。',
+        '3. 其他 type：按 payload 字面内容做通用处理（一句话）。',
+        '输出格式（严格遵循，供下游确定性聚合）：',
+        '1. 每个条目输出一行 JSON：{"id": "<条目id>", "status": "success" 或 "failed", "summary": "<一句话结果>", "reason": "<失败原因，失败时必填>"}',
+        '2. 除这些 JSON 行外，不得输出任何标题、解释或代码块标记。',
+        '3. 必须覆盖计划中的每一个 id，一次给全，不得遗漏。',
+      ].join('\n'),
+    }),
+    scriptTemplateNode({
+      id: 'or-batch-aggregate',
+      title: '逐批聚合',
+      position: nodePosition(2),
+      code: OR_BATCH_AGGREGATE_CODE,
+    }),
+    scriptTemplateNode({
+      id: 'or-morning-report',
+      title: '晨报报告',
+      position: nodePosition(3),
+      code: OR_MORNING_REPORT_CODE,
+    }),
+  ],
+  edges: [
+    templateEdge('or-e1', 'or-queue-intake', 'or-batch-executor'),
+    templateEdge('or-e2', 'or-queue-intake', 'or-batch-aggregate'),
+    templateEdge('or-e3', 'or-batch-executor', 'or-batch-aggregate'),
+    templateEdge('or-e4', 'or-batch-aggregate', 'or-morning-report'),
+  ],
+}
+
 /** Registered research workflow templates, keyed lookup by `id`. */
-export const RESEARCH_WORKFLOW_TEMPLATES: readonly ResearchWorkflowTemplate[] = [literatureReview, paperTranslate]
+export const RESEARCH_WORKFLOW_TEMPLATES: readonly ResearchWorkflowTemplate[] = [literatureReview, paperTranslate, overnightResearch]
