@@ -531,6 +531,7 @@ export default {
       chatCitationsTitle: 'Citations',
       chatAskFailed: 'The knowledge base question failed.',
       chatAskTimeout: 'The knowledge base answer timed out.',
+      chatSelectionExpired: 'The saved knowledge base is no longer available.',
     },
   },
 

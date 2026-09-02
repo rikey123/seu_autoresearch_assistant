@@ -44,6 +44,11 @@ import {
   runSidecar,
   type RagSidecarPaper,
 } from './rag-sidecar'
+import {
+  beginChatAsk,
+  finalizeChatAsk,
+  recordChatAsk,
+} from './chat-ask-service'
 
 const DEFAULT_ENGINE = 'paper-qa'
 
@@ -232,11 +237,17 @@ async function drain(): Promise<void> {
       if (task === undefined) continue
       try {
         if (task.kind === 'index') await runIndexJob(task.id)
-        else await runQuestionTask(task.id)
+        else {
+          await runQuestionTask(task.id)
+          // Chat-bound asks persist their assistant answer (or record the
+          // failure) into the session history once the question is terminal.
+          finalizeChatAsk(task.id)
+        }
       } catch (error) {
         // A queue entry must never take the worker down; the persisted row
         // records the failure instead.
         markTaskFailed(task, `sidecar task crashed: ${(error as Error).message}`)
+        if (task.kind === 'ask') finalizeChatAsk(task.id)
       }
     }
   } finally {
@@ -451,6 +462,50 @@ async function runQuestionTask(questionId: string): Promise<void> {
     engine: outcome.response?.engine || DEFAULT_ENGINE,
     finished_at: Date.now(),
   })
+}
+
+// ---------------------------------------------------------------------------
+// Chat knowledge base ask orchestration (@知识库 in a chat session)
+// ---------------------------------------------------------------------------
+
+export interface ChatAskRequestResult {
+  question: RagQuestionRecord
+  /** Server message row id (as string) of the persisted user question; null when persistence is unavailable. */
+  userMessageId: string | null
+}
+
+/**
+ * Submit a knowledge base question from a chat session and persist the user
+ * message into that session's server-side history. Orchestration order is
+ * deliberate: the question is enqueued first so every rejection (unknown
+ * collection, unindexed, sidecar/API key unconfigured) happens BEFORE any
+ * session history write — a failed submission must not leave a dangling user
+ * message. The worker finalizes the binding once the answer is terminal,
+ * which appends the cited assistant message to the session history.
+ */
+export function requestChatAsk(input: {
+  sessionId?: unknown
+  collectionId?: unknown
+  question?: unknown
+  profile?: unknown
+}): ChatAskRequestResult {
+  const sessionId = requiredString(input.sessionId, 'sessionId', 200)
+  const collectionId = requiredString(input.collectionId, 'collectionId', 200)
+  const question = requiredString(input.question, 'question', 4000)
+  const profile = optionalString(input.profile, 'profile', 100)
+
+  const collection = getCollection(collectionId)
+  if (!collection) throw invalid('knowledge base collection not found', 404)
+
+  // Validates index state, sidecar configuration, and the API key; throws
+  // RagServiceError with a proper status before anything is persisted.
+  const record = enqueueQuestion(collectionId, { question })
+
+  const { userMessageId } = beginChatAsk({ sessionId, profile, question })
+  if (userMessageId != null) {
+    recordChatAsk({ questionId: record.id, sessionId, userMessageId })
+  }
+  return { question: record, userMessageId: userMessageId == null ? null : String(userMessageId) }
 }
 
 // ---------------------------------------------------------------------------

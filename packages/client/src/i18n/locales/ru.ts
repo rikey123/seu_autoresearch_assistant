@@ -452,6 +452,7 @@ export default {
       chatCitationsTitle: 'Цитаты',
       chatAskFailed: 'Не удалось задать вопрос базе знаний.',
       chatAskTimeout: 'Время ожидания ответа базы знаний истекло.',
+      chatSelectionExpired: 'Сохранённая база знаний больше недоступна.',
     },
   },
 

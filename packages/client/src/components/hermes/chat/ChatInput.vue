@@ -246,6 +246,13 @@ const kbDropdownRef = ref<HTMLDivElement>()
 
 const activeKbSelection = computed(() => chatKnowledgeStore.selectionFor(chatStore.activeSessionId))
 
+// Shown once when a restored selection was dropped because its collection no
+// longer exists; dismissed by picking or clearing a selection.
+const kbInvalidatedNotice = computed(() =>
+  chatKnowledgeStore.invalidatedSelection?.sessionId === chatStore.activeSessionId
+  && !activeKbSelection.value,
+)
+
 const filteredKbCollections = computed<RagCollection[]>(() => {
   const query = kbMentionQuery.value.trim().toLowerCase()
   const collections = chatKnowledgeStore.selectableCollections
@@ -679,6 +686,15 @@ watch(() => chatStore.activeSession?.id, () => {
   })
 })
 
+// Restored knowledge base selections are lazily validated: switching to a
+// session with a persisted selection loads the collection list once and
+// clears the selection (with a hint) when the collection no longer exists.
+watch(() => chatStore.activeSession?.id, (sessionId) => {
+  if (!sessionId) return
+  if (!chatKnowledgeStore.selectionBySession[sessionId]) return
+  void chatKnowledgeStore.ensureSelectionValidated(sessionId)
+}, { immediate: true })
+
 watch(configuredTextareaHeight, () => {
   applyConfiguredTextareaHeight()
 })
@@ -1111,10 +1127,17 @@ async function handleSend() {
 
   // Knowledge base ask path: text-only messages in a KB-armed session go to
   // the RAG pipeline. Messages carrying attachments keep the regular send so
-  // uploads are never silently dropped.
+  // uploads are never silently dropped. A restored (still validating)
+  // selection keeps the session armed: it routes to the KB ask — the server
+  // rejects a collection that no longer exists instead of the message ever
+  // reaching the agent run.
   const kbSelection = activeKbSelection.value
-  if (kbSelection && attachments.value.length === 0 && !text.startsWith('/')) {
-    chatStore.sendKnowledgeBaseMessage(kbSelection, text)
+  const persistedKbSelectionId = chatStore.activeSessionId
+    ? chatKnowledgeStore.selectionBySession[chatStore.activeSessionId] || ''
+    : ''
+  if ((kbSelection || persistedKbSelectionId) && attachments.value.length === 0 && !text.startsWith('/')) {
+    const armed = kbSelection || { id: persistedKbSelectionId, name: persistedKbSelectionId }
+    chatStore.sendKnowledgeBaseMessage(armed, text)
   } else {
     chatStore.sendMessage(text, attachments.value.length > 0 ? attachments.value : undefined)
   }
@@ -1327,6 +1350,13 @@ function isImage(type: string): boolean {
           <line x1="6" y1="6" x2="18" y2="18" />
         </svg>
       </button>
+    </div>
+    <div
+      v-if="kbInvalidatedNotice"
+      class="kb-selection-invalidated"
+      data-testid="kb-selection-invalidated"
+    >
+      {{ t('research.rag.chatSelectionExpired') }}
     </div>
 
     <div
@@ -2478,6 +2508,15 @@ function isImage(type: string): boolean {
     color: $text-primary;
     background: rgba(var(--text-primary-rgb), 0.08);
   }
+}
+
+.kb-selection-invalidated {
+  margin: 0 8px 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(var(--warning-rgb), 0.08);
+  color: $text-secondary;
+  font-size: 12px;
 }
 
 .kb-mention-dropdown {

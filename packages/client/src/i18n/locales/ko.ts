@@ -542,6 +542,7 @@ export default {
       chatCitationsTitle: '참고 문헌',
       chatAskFailed: '지식베이스 질문이 실패했습니다.',
       chatAskTimeout: '지식베이스 응답이 시간 초과되었습니다.',
+      chatSelectionExpired: '저장된 지식베이스를 더 이상 사용할 수 없습니다.',
     },
   },
 

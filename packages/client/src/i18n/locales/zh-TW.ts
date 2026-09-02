@@ -530,6 +530,7 @@ export default {
       chatCitationsTitle: '引用溯源',
       chatAskFailed: '知識庫問答失敗。',
       chatAskTimeout: '知識庫回答逾時。',
+      chatSelectionExpired: '已儲存的知識庫已不存在。',
     },
   },
 

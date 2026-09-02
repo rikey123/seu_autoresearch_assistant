@@ -542,6 +542,7 @@ export default {
       chatCitationsTitle: 'Citações',
       chatAskFailed: 'A pergunta à base de conhecimento falhou.',
       chatAskTimeout: 'A resposta da base de conhecimento excedeu o tempo limite.',
+      chatSelectionExpired: 'A base de conhecimento salva não está mais disponível.',
     },
   },
 
