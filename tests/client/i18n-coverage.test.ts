@@ -244,6 +244,34 @@ const GROUP_CHAT_AGENT_LINK_LOCALIZED_KEYS = [
   'groupChat.allAgents',
 ]
 
+const RESEARCH_LATEX_LOCALIZED_KEYS = [
+  'research.latex.documentsTitle',
+  'research.latex.newDocument',
+  'research.latex.untitled',
+  'research.latex.titlePlaceholder',
+  'research.latex.source',
+  'research.latex.save',
+  'research.latex.saved',
+  'research.latex.compile',
+  'research.latex.compiling',
+  'research.latex.previewTitle',
+  'research.latex.previewEmpty',
+  'research.latex.previewFailed',
+  'research.latex.errorPanelTitle',
+  'research.latex.noErrors',
+  'research.latex.statusQueued',
+  'research.latex.statusRunning',
+  'research.latex.statusCompleted',
+  'research.latex.statusFailed',
+  'research.latex.engineUnavailable',
+  'research.latex.compileConflict',
+  'research.latex.loadFailed',
+  'research.latex.lineLabel',
+  'research.latex.loading',
+  'research.latex.emptyDocuments',
+  'research.latex.deleteDocument',
+]
+
 const PLATFORM_SETTINGS_LOCALE_SPECIFIC_LOCALIZED_KEYS: Record<string, string[]> = {
   de: ['platform.qqAppId', 'platform.qqAppSecret'],
   ja: ['platform.homeserver', 'platform.accountId'],
@@ -583,6 +611,32 @@ describe('i18n locale coverage', () => {
     })
 
     expect(untranslated).toEqual([])
+  })
+
+  it('localizes Research LaTeX copy in every raw non-English locale instead of copying English', () => {
+    const untranslated = Object.entries(rawMessages).flatMap(([locale, localeMessages]) => {
+      if (locale === 'en') return []
+
+      return RESEARCH_LATEX_LOCALIZED_KEYS.flatMap((key) => {
+        const localeValue = getPath(localeMessages, key)
+        if (typeof localeValue !== 'string' || !localeValue.trim()) return [`${locale}: ${key} missing`]
+        return localeValue === getPath(en, key) ? [`${locale}: ${key} copies English`] : []
+      })
+    })
+
+    expect(untranslated).toEqual([])
+  })
+
+  it('uses localized line labels with a {line} placeholder for Research LaTeX in every locale', () => {
+    const mismatches = Object.entries(rawMessages).flatMap(([locale, localeMessages]) => {
+      const value = getPath(localeMessages, 'research.latex.lineLabel')
+      if (typeof value !== 'string') return [`${locale}: research.latex.lineLabel missing`]
+      return interpolationNames(value).join(',') === 'line'
+        ? []
+        : [`${locale}: research.latex.lineLabel placeholder mismatch`]
+    })
+
+    expect(mismatches).toEqual([])
   })
 
   it('defines every Webhook settings string in every raw non-English locale', () => {
