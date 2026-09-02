@@ -10,6 +10,16 @@ import type {
 
 export type KnowledgeNotice = { kind: 'error' | 'success'; key: string; detail?: string }
 
+// Polling guardrails for index/ask tasks. The sidecar's own execution timeout
+// is 10 minutes, so 15 minutes of client polling (matching the chat KB ask
+// deadline) always covers the server-side lifecycle; beyond that the task is
+// never going to converge and the store must give up instead of spinning
+// forever. A collection switch mid-poll also aborts immediately: the client
+// renders one collection at a time and a job/question from the previous
+// selection must never be written into the new one's view.
+export const KNOWLEDGE_POLL_INTERVAL_MS = 500
+export const KNOWLEDGE_POLL_TIMEOUT_MS = 15 * 60 * 1000
+
 // Client state for the RAG knowledge base: collections, membership, index
 // jobs, and the cited Q&A panel. Index/ask tasks are queued server-side; the
 // store polls their persisted records until they reach a terminal state.
@@ -182,7 +192,7 @@ export const useKnowledgeStore = defineStore('research-knowledge', () => {
       latestJob.value = job
       const collection = collectionById(id)
       if (collection) replaceCollection({ ...collection, index_status: 'indexing' })
-      const terminal = await pollIndexJob(job.id)
+      const terminal = await pollIndexJob(job.id, id)
       latestJob.value = terminal
       await Promise.all([refreshCollection(id), refreshMembers()])
       if (terminal.status === 'completed') {
@@ -203,11 +213,24 @@ export const useKnowledgeStore = defineStore('research-knowledge', () => {
     }
   }
 
-  async function pollIndexJob(jobId: string): Promise<RagIndexJob> {
+  async function pollIndexJob(jobId: string, collectionId: string): Promise<RagIndexJob> {
+    const deadline = Date.now() + KNOWLEDGE_POLL_TIMEOUT_MS
     for (;;) {
-      const job = await knowledgeApi.getLatestIndexJob(selectedId.value as string)
-      if (job && job.id === jobId && (job.status === 'completed' || job.status === 'failed')) return job
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // A collection switch invalidates the poll target immediately: the
+      // selected library changed, so this job belongs to a view the user left.
+      if (selectedId.value !== collectionId) {
+        throw new Error('the knowledge base selection changed while the index job was running')
+      }
+      const job = await knowledgeApi.getLatestIndexJob(collectionId)
+      if (job && job.id === jobId) {
+        if (job.status === 'completed' || job.status === 'failed') return job
+      } else if (job) {
+        throw new Error('the index job id no longer matches the latest job of the selected knowledge base')
+      }
+      if (Date.now() > deadline) {
+        throw new Error('the index job did not reach a terminal state within the polling timeout (15 minutes)')
+      }
+      await new Promise(resolve => setTimeout(resolve, KNOWLEDGE_POLL_INTERVAL_MS))
     }
   }
 
@@ -223,11 +246,13 @@ export const useKnowledgeStore = defineStore('research-knowledge', () => {
     const id = selectedId.value
     if (!id) return false
     asking.value = true
+    let submittedId = ''
     try {
       const submitted = await knowledgeApi.askQuestion(id, question)
+      submittedId = submitted.id
       history.value = [submitted, ...history.value]
       pendingQuestionIds.value = [...pendingQuestionIds.value, submitted.id]
-      const terminal = await pollQuestion(submitted.id)
+      const terminal = await pollQuestion(submitted.id, id)
       history.value = history.value.map(entry => (entry.id === terminal.id ? terminal : entry))
       pendingQuestionIds.value = pendingQuestionIds.value.filter(entry => entry !== terminal.id)
       if (terminal.status === 'answered') return true
@@ -238,6 +263,9 @@ export const useKnowledgeStore = defineStore('research-knowledge', () => {
       }
       return false
     } catch (error) {
+      if (submittedId) {
+        pendingQuestionIds.value = pendingQuestionIds.value.filter(entry => entry !== submittedId)
+      }
       notice.value = { kind: 'error', key: 'research.rag.askFailed', detail: errorDetail(error) }
       return false
     } finally {
@@ -245,11 +273,24 @@ export const useKnowledgeStore = defineStore('research-knowledge', () => {
     }
   }
 
-  async function pollQuestion(questionId: string): Promise<RagQuestion> {
+  async function pollQuestion(questionId: string, collectionId: string): Promise<RagQuestion> {
+    const deadline = Date.now() + KNOWLEDGE_POLL_TIMEOUT_MS
     for (;;) {
+      // The ask belongs to the collection that was selected at submit time;
+      // once the user switches collections the local history is replaced, so
+      // an old record must never be written into the new view.
+      if (selectedId.value !== collectionId) {
+        throw new Error('the knowledge base selection changed while the question was running')
+      }
       const record = await knowledgeApi.getQuestion(questionId)
+      if (record.id !== questionId) {
+        throw new Error('the question id no longer matches the persisted question record')
+      }
       if (record.status === 'answered' || record.status === 'failed') return record
-      await new Promise(resolve => setTimeout(resolve, 500))
+      if (Date.now() > deadline) {
+        throw new Error('the question did not reach a terminal state within the polling timeout (15 minutes)')
+      }
+      await new Promise(resolve => setTimeout(resolve, KNOWLEDGE_POLL_INTERVAL_MS))
     }
   }
 

@@ -151,7 +151,8 @@ export function mountVcpCardFrames(root: HTMLElement): void {
 export type VcpCardActionResult = 'toggle' | 'height' | null
 
 // Click-delegated card action: collapse/expand and height cycling. Buttons live
-// in the card header, so clicks inside the sandboxed iframe never reach this.
+// in the card header; clicks inside a card's iframe stay in the iframe's own
+// document and never reach this parent-document handler.
 export function applyVcpCardAction(card: HTMLElement, action: string | undefined): VcpCardActionResult {
   if (action === 'toggle') {
     const collapsed = card.dataset.vcpCollapsed === 'true'

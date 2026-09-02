@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import ResearchKnowledgeView from '@/views/research/ResearchKnowledgeView.vue'
-import { useKnowledgeStore } from '@/stores/research/knowledge'
+import { KNOWLEDGE_POLL_TIMEOUT_MS, useKnowledgeStore } from '@/stores/research/knowledge'
 
 const knowledgeApi = vi.hoisted(() => ({
   listCollections: vi.fn(),
@@ -399,5 +399,122 @@ describe('research knowledge store', () => {
     expect(await store.ask('why')).toBe(false)
     expect(store.notice?.key).toBe('research.rag.askFailed')
     expect(store.notice?.detail).toBe('no answer')
+  })
+
+  function indexJob(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'job-1',
+      collection_id: 'col-1',
+      status: 'queued',
+      attempts: 0,
+      papers_count: 1,
+      chunks: 0,
+      engine: '',
+      error: null,
+      created_at: 1,
+      updated_at: 1,
+      started_at: null,
+      finished_at: null,
+      ...overrides,
+    }
+  }
+
+  function mountSelectedStore() {
+    const store = useKnowledgeStore()
+    store.collections = [collection(), collection({ id: 'col-2', name: 'Other' })]
+    store.selectedId = 'col-1'
+    return store
+  }
+
+  it('aborts the index poll immediately when the user switches collections', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = mountSelectedStore()
+      knowledgeApi.startIndexing.mockResolvedValueOnce(indexJob())
+      knowledgeApi.getLatestIndexJob.mockResolvedValue(indexJob({ status: 'running', attempts: 1, started_at: 1 }))
+
+      const done = store.startIndexing()
+      await vi.advanceTimersByTimeAsync(600)
+      store.selectedId = 'col-2'
+      // The pending poll sleep must fire before the abort check runs again.
+      await vi.advanceTimersByTimeAsync(600)
+      expect(await done).toBe(false)
+      expect(store.notice?.key).toBe('research.rag.indexFailed')
+      expect(store.notice?.detail).toContain('knowledge base selection changed')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('aborts the index poll when the latest job id no longer matches', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = mountSelectedStore()
+      knowledgeApi.startIndexing.mockResolvedValueOnce(indexJob())
+      knowledgeApi.getLatestIndexJob.mockResolvedValue(indexJob({ id: 'job-999', status: 'running', attempts: 1 }))
+
+      const done = store.startIndexing()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(await done).toBe(false)
+      expect(store.notice?.detail).toContain('no longer matches the latest job')
+      expect(store.latestJob?.id).toBe('job-1')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives up the index poll after the polling timeout instead of spinning forever', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = mountSelectedStore()
+      knowledgeApi.startIndexing.mockResolvedValueOnce(indexJob())
+      knowledgeApi.getLatestIndexJob.mockResolvedValue(indexJob({ status: 'running', attempts: 1, started_at: 1 }))
+
+      const done = store.startIndexing()
+      await vi.advanceTimersByTimeAsync(KNOWLEDGE_POLL_TIMEOUT_MS + 1000)
+      expect(await done).toBe(false)
+      expect(store.notice?.key).toBe('research.rag.indexFailed')
+      expect(store.notice?.detail).toContain('polling timeout')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('aborts the question poll on collection switch and releases the pending id', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = mountSelectedStore()
+      knowledgeApi.askQuestion.mockResolvedValueOnce(question({ id: 'q-1', status: 'queued', answer: null, citations: [] }))
+      knowledgeApi.getQuestion.mockResolvedValue(question({ id: 'q-1', status: 'running', answer: null, citations: [] }))
+
+      const done = store.ask('What is attention?')
+      await vi.advanceTimersByTimeAsync(600)
+      store.selectedId = 'col-2'
+      // The pending poll sleep must fire before the abort check runs again.
+      await vi.advanceTimersByTimeAsync(600)
+      expect(await done).toBe(false)
+      expect(store.notice?.key).toBe('research.rag.askFailed')
+      expect(store.notice?.detail).toContain('knowledge base selection changed')
+      expect(store.pendingQuestionIds).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives up the question poll after the polling timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = mountSelectedStore()
+      knowledgeApi.askQuestion.mockResolvedValueOnce(question({ id: 'q-1', status: 'queued', answer: null, citations: [] }))
+      knowledgeApi.getQuestion.mockResolvedValue(question({ id: 'q-1', status: 'running', answer: null, citations: [] }))
+
+      const done = store.ask('What is attention?')
+      await vi.advanceTimersByTimeAsync(KNOWLEDGE_POLL_TIMEOUT_MS + 1000)
+      expect(await done).toBe(false)
+      expect(store.notice?.detail).toContain('polling timeout')
+      expect(store.pendingQuestionIds).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

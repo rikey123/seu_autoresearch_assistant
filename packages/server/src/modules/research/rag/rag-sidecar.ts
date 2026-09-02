@@ -90,21 +90,27 @@ export function resolveSidecarLaunch(
 /**
  * Environment handed to the sidecar. API-first: the LLM/embedding endpoint is
  * an OpenAI-compatible HTTP API configured purely through environment
- * variables; keys never touch disk and no local model is ever launched.
+ * variables; keys never touch disk and no local model is ever launched. The
+ * child receives exactly this whitelist — never a copy of the full parent
+ * environment — so unrelated secrets (other service tokens, credentials,
+ * host-specific variables) cannot leak into the sidecar process. It covers the
+ * OpenAI-compatible endpoint configuration, the RAG_* convention variables,
+ * and RAG_STUB_MODE, which drives the in-repo test stub protocol.
  */
+export const SIDECAR_ENV_WHITELIST = [
+  'OPENAI_API_KEY',
+  'OPENAI_BASE_URL',
+  'OPENAI_MODEL',
+  'RAG_EMBEDDING_MODEL',
+  'RAG_EMBEDDING_BASE_URL',
+  'RAG_STUB_MODE',
+] as const
+
 export function sidecarEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...base }
-  const passthrough = [
-    'OPENAI_API_KEY',
-    'OPENAI_BASE_URL',
-    'OPENAI_MODEL',
-    'RAG_EMBEDDING_MODEL',
-    'RAG_EMBEDDING_BASE_URL',
-  ]
-  for (const key of passthrough) {
+  const env: NodeJS.ProcessEnv = {}
+  for (const key of SIDECAR_ENV_WHITELIST) {
     const value = base[key]
-    if (value === undefined) delete env[key]
-    else env[key] = value
+    if (value !== undefined) env[key] = value
   }
   return env
 }

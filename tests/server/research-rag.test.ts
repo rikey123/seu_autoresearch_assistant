@@ -96,6 +96,7 @@ process.stdin.on('end', function () {
     baseUrl: process.env.OPENAI_BASE_URL || null,
     model: process.env.OPENAI_MODEL || null,
     embeddingModel: process.env.RAG_EMBEDDING_MODEL || null,
+    allEnv: Object.keys(process.env).sort(),
   }) + '\\n');
   function respond(payload) {
     // Do NOT process.exit() here: on Windows the pipe flush callback can fire
@@ -130,6 +131,20 @@ process.stdin.on('end', function () {
   }
   if (mode === 'noanswer') {
     respond({ status: 'ok', action: 'ask', answer: '', citations: [], engine: 'stub-engine' });
+    return;
+  }
+  if (mode === 'foreigncite') {
+    // Citations carry a paperId that is NOT in the requested collection —
+    // runQuestionTask must drop it (defense in depth for citation traceability).
+    respond({
+      status: 'ok',
+      action: 'ask',
+      answer: 'Answer citing a foreign paper id.',
+      citations: (request.papers || []).map(function (paper, index) {
+        return { paperId: paper.id, page: index + 1, snippet: 'own citation ' + paper.title };
+      }).concat([{ paperId: 'ghost-paper-not-in-collection', page: 9, snippet: 'foreign citation' }]),
+      engine: 'stub-engine',
+    });
     return;
   }
   respond({
@@ -418,6 +433,36 @@ describe('rag index job lifecycle through the sidecar stub', () => {
     expect(call!.apiKey).toBe('dummy-rag-key')
   })
 
+  it('does not leak unrelated secrets into the sidecar child environment', async () => {
+    const paperId = createLibraryPaper('leak.pdf', 'Leak Paper')
+    const collectionId = await createCollection('Leak')
+    await addPaper(collectionId, paperId)
+
+    process.env.UNRELATED_SECRET = 'must-not-reach-the-child'
+    process.env.HOME_SOFTWARE_CREDENTIALS = 'do-not-export'
+    try {
+      const submitted = await dispatch('POST', `/api/studio/research/rag/collections/${collectionId}/index`)
+      await waitForJob(submitted.body.job.id, 'completed')
+
+      const call = stubCallsLog().find(entry => entry.request) as { allEnv: string[] } | undefined
+      expect(call).toBeTruthy()
+      // Whitelist-only: unrelated secrets never reach the child (the OS may
+      // inject system variables like PATH on Windows, but nothing from the
+      // parent's custom environment that is not in the whitelist).
+      expect(call!.allEnv).not.toContain('UNRELATED_SECRET')
+      expect(call!.allEnv).not.toContain('HOME_SOFTWARE_CREDENTIALS')
+      expect(call!.allEnv).not.toContain('HERMES_HOME')
+      expect(call!.allEnv).toContain('OPENAI_API_KEY')
+      expect(call!.allEnv).toContain('OPENAI_BASE_URL')
+      expect(call!.allEnv).toContain('OPENAI_MODEL')
+      expect(call!.allEnv).toContain('RAG_EMBEDDING_MODEL')
+      expect(call!.allEnv).toContain('RAG_STUB_MODE')
+    } finally {
+      delete process.env.UNRELATED_SECRET
+      delete process.env.HOME_SOFTWARE_CREDENTIALS
+    }
+  })
+
   it('records failure details when the sidecar reports an error response', async () => {
     const collectionId = await createCollection('Error')
     await addPaper(collectionId, createLibraryPaper('error.pdf', 'Error Paper'))
@@ -456,11 +501,14 @@ describe('rag index job lifecycle through the sidecar stub', () => {
     const collectionId = await createCollection('Timeout')
     await addPaper(collectionId, createLibraryPaper('stuck.pdf', 'Stuck Paper'))
     process.env.RAG_STUB_MODE = 'slow'
-    process.env.RAG_SIDECAR_TIMEOUT_MS = '400'
+    // Generous window: under parallel test load the stub's node boot plus its
+    // pidsUpdate logging can exceed a sub-second timeout — the property under
+    // test is the tree kill, not the exact timing.
+    process.env.RAG_SIDECAR_TIMEOUT_MS = '2500'
 
     const submitted = await dispatch('POST', `/api/studio/research/rag/collections/${collectionId}/index`)
     const job = await waitForJob(submitted.body.job.id, 'failed', 10000)
-    expect(job.error).toContain('timed out after 400ms')
+    expect(job.error).toContain('timed out after 2500ms')
     expect(job.error).toContain('process tree was killed')
 
     // The stub spawned its own child and logged both pids; the timed-out tree
@@ -598,6 +646,24 @@ describe('rag cited question answering through the sidecar stub', () => {
     expect(record.error).toContain('no answer text')
   })
 
+  it('drops citations whose paperId is not a member of the collection', async () => {
+    const collectionId = await indexedCollection('ForeignCite')
+    process.env.RAG_STUB_MODE = 'foreigncite'
+    const submitted = await dispatch('POST', `/api/studio/research/rag/collections/${collectionId}/ask`, {
+      question: 'Which citation is mine?',
+    })
+    const record = await waitForQuestion(submitted.body.question.id, 'answered')
+    // The member citation survives; the foreign paperId is filtered out before
+    // persistence (defense in depth, never rendered as broken traceability).
+    expect(record.citations).toHaveLength(1)
+    expect(record.citations[0].page).toBe(1)
+    expect(record.citations[0].snippet).toContain('own citation')
+    expect(record.citations[0].paperId).not.toBe('ghost-paper-not-in-collection')
+
+    const history = await dispatch('GET', `/api/studio/research/rag/collections/${collectionId}/history`)
+    expect(history.body.history[0].citations).toHaveLength(1)
+  })
+
   it('rejects questions while an index job is running', async () => {
     const collectionId = await createCollection('Indexing')
     await addPaper(collectionId, createLibraryPaper('indexing.pdf', 'Indexing Paper'))
@@ -640,6 +706,44 @@ describe('rag restart recovery and worker stop', () => {
 
     const collection = store.getCollection(collectionId)
     expect(collection?.index_status).toBe('unindexed')
+  })
+
+  it('fails leftover queued rows too when the database reopens', async () => {
+    // The in-memory worker queue died with the old process, so a persisted
+    // queued row can never start: the reopen must fail it instead of leaving
+    // a zombie entry that distorts getLatestIndexJob forever.
+    const collectionId = await createCollection('ZombieQueue')
+    await addPaper(collectionId, createLibraryPaper('zombie.pdf', 'Zombie Paper'))
+    const queuedJob = store.insertIndexJob({ collection_id: collectionId, papers_count: 1 })
+    const queuedRunning = store.insertIndexJob({ collection_id: collectionId, papers_count: 1 })
+    store.updateIndexJob(queuedRunning.id, { status: 'running', started_at: Date.now() })
+    const queuedQuestion = store.insertQuestion(collectionId, 'queued zombie question')
+    store.updateQuestion(queuedQuestion.id, { status: 'running' })
+    const queuedQuestionIdle = store.insertQuestion(collectionId, 'idle queued question')
+    // getLatestIndexJob reports the newest row by created_at — after the
+    // reopen, every row must be terminal so the view cannot regress (the
+    // sub-millisecond insert tie can order either job first, so assert the
+    // full set instead of a specific pre-reopen status).
+    expect(['queued', 'running']).toContain(store.getLatestIndexJob(collectionId)?.status)
+
+    store.closeRagDb()
+    store.getRagDb()
+
+    const failedJob = store.getIndexJob(queuedJob.id)
+    expect(failedJob?.status).toBe('failed')
+    expect(failedJob?.error).toContain('interrupted: server restarted')
+    const failedJob2 = store.getIndexJob(queuedRunning.id)
+    expect(failedJob2?.status).toBe('failed')
+    expect(failedJob2?.error).toContain('interrupted: server restarted')
+    const failedQuestion = store.getQuestion(queuedQuestion.id)
+    expect(failedQuestion?.status).toBe('failed')
+    expect(failedQuestion?.error).toContain('interrupted: server restarted')
+    expect(store.getQuestion(queuedQuestionIdle.id)?.status).toBe('failed')
+
+    const latest = store.getLatestIndexJob(collectionId)
+    expect(latest?.status).toBe('failed')
+    expect(store.nextQueuedIndexJob()).toBeNull()
+    expect(store.nextQueuedQuestion()).toBeNull()
   })
 
   it('stops the worker and kills the in-flight sidecar on stopRagWorker', async () => {
@@ -722,18 +826,44 @@ describe('rag sidecar protocol parser hardening', () => {
     expect(raw).toEqual({ bin: 'C:/tools/sidecar.exe', args: [] })
   })
 
-  it('keeps only the pinned API-first variables in the sidecar environment', () => {
+  it('passes only the pinned API-first variables through to the sidecar', () => {
     const env = sidecar.sidecarEnv({
       OPENAI_API_KEY: 'k',
       OPENAI_BASE_URL: 'https://api.example.invalid/v1',
       OPENAI_MODEL: 'm',
       RAG_EMBEDDING_MODEL: 'emb',
+      RAG_EMBEDDING_BASE_URL: 'https://embedding.example.invalid/v1',
+      RAG_STUB_MODE: 'slow',
       UNRELATED_SECRET: 'must-not-leak',
+      PATH: 'C:/Windows/System32',
+      HOME: 'C:/Users/exam',
+      HERMES_HOME: 'C:/secret/agent-root',
     })
+    // Whitelist-only: the exact key set, nothing more — the sidecar process
+    // must never inherit the full parent environment.
+    expect(Object.keys(env).sort()).toEqual([
+      'OPENAI_API_KEY',
+      'OPENAI_BASE_URL',
+      'OPENAI_MODEL',
+      'RAG_EMBEDDING_BASE_URL',
+      'RAG_EMBEDDING_MODEL',
+      'RAG_STUB_MODE',
+    ])
     expect(env.OPENAI_API_KEY).toBe('k')
     expect(env.OPENAI_BASE_URL).toBe('https://api.example.invalid/v1')
     expect(env.OPENAI_MODEL).toBe('m')
     expect(env.RAG_EMBEDDING_MODEL).toBe('emb')
+    expect(env.RAG_EMBEDDING_BASE_URL).toBe('https://embedding.example.invalid/v1')
+    expect(env.RAG_STUB_MODE).toBe('slow')
+    expect(env.UNRELATED_SECRET).toBeUndefined()
+    expect(env.HERMES_HOME).toBeUndefined()
+    expect(env.PATH).toBeUndefined()
+    expect(env.HOME).toBeUndefined()
+  })
+
+  it('omits whitelist keys that are unset in the parent environment', () => {
+    const env = sidecar.sidecarEnv({ OPENAI_API_KEY: 'k' })
+    expect(Object.keys(env)).toEqual(['OPENAI_API_KEY'])
   })
 })
 

@@ -21,7 +21,7 @@ import { homedir } from 'node:os'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { listFilesRecursive, safeReadFile } from '../../studio/public/files'
-import { getProfileDir } from '../../studio/public/profile-config'
+import { getProfileDir, listProfileNames } from '../../studio/public/profile-config'
 import {
   RESEARCH_SKILLPACK_MANIFEST_FILENAME,
   RESEARCH_SKILLPACK_MANIFEST_VERSION,
@@ -89,8 +89,36 @@ function normalizeTarget(target: unknown): ResearchSkillPackTarget {
   return ((RESEARCH_SKILLPACK_TARGETS as readonly string[]).includes(value) ? value : 'hermes') as ResearchSkillPackTarget
 }
 
+/**
+ * Option validation error for user-supplied skillpack options (profile).
+ * The controllers map this to HTTP 400 with the message.
+ */
+export class SkillpackOptionError extends Error {}
+
+function knownProfileNames(): string[] {
+  try {
+    return listProfileNames()
+  } catch {
+    return ['default']
+  }
+}
+
+/**
+ * Normalize and validate the profile option. The profile selects the target
+ * directory on disk, so it must be one of the known profile names — an
+ * arbitrary string would otherwise resolve to whatever directory happens to
+ * exist under the Hermes root. Both valid targets (hermes, claude) keep
+ * working: an omitted profile means 'default', which is always known.
+ */
 function normalizeProfile(profile: unknown): string {
-  return String(profile || 'default').trim() || 'default'
+  const name = String(profile || 'default').trim() || 'default'
+  const known = knownProfileNames()
+  if (!known.includes(name)) {
+    throw new SkillpackOptionError(
+      `unknown profile "${name}"; load/unload accepts only known profiles (${known.join(', ')})`,
+    )
+  }
+  return name
 }
 
 /** sha256 over the skill folder contents (sorted rel path + bytes). */

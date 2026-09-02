@@ -5162,6 +5162,10 @@ export const useChatStore = defineStore('chat', () => {
   const RAG_ASK_POLL_INTERVAL_MS = 500
   // Matches the sidecar's own 10 minute timeout plus queue slack.
   const RAG_ASK_POLL_TIMEOUT_MS = 15 * 60 * 1000
+  // A single transient getQuestion failure (socket blip, mid-deploy restart)
+  // must not fail the whole ask: retry up to this many consecutive errors
+  // before surfacing the error in-chat.
+  const RAG_ASK_POLL_MAX_ERRORS = 2
 
   function delayMs(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
@@ -5223,13 +5227,22 @@ export const useChatStore = defineStore('chat', () => {
       const submitted = await askQuestion(collection.id, trimmed)
       const deadline = Date.now() + RAG_ASK_POLL_TIMEOUT_MS
       let record = submitted
+      let pollErrors = 0
       while (record.status !== 'answered' && record.status !== 'failed') {
         if (Date.now() > deadline) {
           failAsk('', true)
           return
         }
         await delayMs(RAG_ASK_POLL_INTERVAL_MS)
-        record = await getQuestion(submitted.id)
+        try {
+          record = await getQuestion(submitted.id)
+          pollErrors = 0
+        } catch (error) {
+          // Transient network/server hiccups are retried a couple of times;
+          // only the retry-exhausted error fails the ask.
+          pollErrors += 1
+          if (pollErrors > RAG_ASK_POLL_MAX_ERRORS) throw error
+        }
       }
       if (record.status !== 'answered' || !(record.answer || '').trim()) {
         failAsk(record.error || '')

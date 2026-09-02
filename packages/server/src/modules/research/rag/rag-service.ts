@@ -435,10 +435,19 @@ async function runQuestionTask(questionId: string): Promise<void> {
     })
     return
   }
+  // Defense in depth: a citation must reference a paper this collection
+  // actually contains. The sidecar is trusted for the answer text, but a
+  // malformed or foreign paperId must never be persisted — unknown ids are
+  // dropped instead of rendering broken traceability in the client.
+  const memberIds = new Set(listCollectionMembers(record.collection_id).map(member => member.paper_id))
+  const citations = (outcome.response?.citations ?? []).filter(citation => {
+    const paperId = String(citation.paperId || '').trim()
+    return paperId !== '' && memberIds.has(paperId)
+  })
   updateQuestion(questionId, {
     status: 'answered',
     answer,
-    citations: outcome.response?.citations ?? [],
+    citations,
     engine: outcome.response?.engine || DEFAULT_ENGINE,
     finished_at: Date.now(),
   })

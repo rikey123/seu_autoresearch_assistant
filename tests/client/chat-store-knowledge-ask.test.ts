@@ -241,4 +241,72 @@ describe('chat store knowledge base ask orchestration', () => {
     expect(knowledgeApi.askQuestion).not.toHaveBeenCalled()
     expect(store.sessions[0].messages).toHaveLength(0)
   })
+
+  it('marks the ask as timed out when the polling deadline passes without a terminal record', async () => {
+    const store = await mountActiveSession()
+    knowledgeApi.askQuestion.mockResolvedValue(questionRecord({ status: 'queued' }))
+    knowledgeApi.getQuestion.mockResolvedValue(questionRecord({ status: 'running', answer: null }))
+
+    vi.useFakeTimers()
+    const done = store.sendKnowledgeBaseMessage(KB, 'What is attention?')
+    await flushPromises()
+    // Advance past the 15 minute KB ask deadline: the poll must converge into
+    // the in-chat timeout state instead of polling forever.
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000 + 1000)
+    await done
+    vi.useRealTimers()
+
+    const answer = store.sessions[0].messages[1]
+    expect(answer.role).toBe('assistant')
+    expect(answer.isStreaming).toBe(false)
+    expect(answer.systemType).toBe('error')
+    expect(answer.ragAskTimeout).toBe(true)
+    expect(answer.ragAskError).toBeUndefined()
+    expect(answer.content).toBe('')
+  })
+
+  it('recovers from a transient getQuestion failure instead of failing the whole ask', async () => {
+    const store = await mountActiveSession()
+    knowledgeApi.askQuestion.mockResolvedValue(questionRecord({ status: 'queued' }))
+    knowledgeApi.getQuestion
+      .mockRejectedValueOnce(new Error('network blip'))
+      .mockResolvedValue(questionRecord({
+        status: 'answered',
+        answer: 'Recovered answer.',
+        citations: [],
+      }))
+
+    vi.useFakeTimers()
+    const done = store.sendKnowledgeBaseMessage(KB, 'What is attention?')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(1500)
+    await done
+    vi.useRealTimers()
+
+    const answer = store.sessions[0].messages[1]
+    expect(answer.ragAskError).toBeUndefined()
+    expect(answer.ragAskTimeout).toBeUndefined()
+    expect(answer.isStreaming).toBe(false)
+    expect(answer.content).toBe('Recovered answer.')
+    // One rejected poll + one successful retry — not a full ask failure.
+    expect(knowledgeApi.getQuestion).toHaveBeenCalledTimes(2)
+  })
+
+  it('fails the ask only after getQuestion keeps failing beyond the retry budget', async () => {
+    const store = await mountActiveSession()
+    knowledgeApi.askQuestion.mockResolvedValue(questionRecord({ status: 'queued' }))
+    knowledgeApi.getQuestion.mockRejectedValue(new Error('connection reset'))
+
+    vi.useFakeTimers()
+    const done = store.sendKnowledgeBaseMessage(KB, 'What is attention?')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(3000)
+    await done
+    vi.useRealTimers()
+
+    const answer = store.sessions[0].messages[1]
+    expect(answer.systemType).toBe('error')
+    expect(answer.ragAskError).toContain('connection reset')
+    expect(answer.ragAskTimeout).toBeUndefined()
+  })
 })
