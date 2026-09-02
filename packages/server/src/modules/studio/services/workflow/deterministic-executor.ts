@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { killOwnedProcessTree } from '../../infrastructure/process-tree'
 import type {
   WorkflowDeterministicNodeRequest,
   WorkflowDeterministicNodeResult,
@@ -16,6 +17,11 @@ export type WorkflowDeterministicNodeType = (typeof DETERMINISTIC_WORKFLOW_NODE_
 export function isDeterministicWorkflowNodeType(type: string): type is WorkflowDeterministicNodeType {
   return (DETERMINISTIC_WORKFLOW_NODE_TYPES as readonly string[]).includes(type)
 }
+
+/** Per-stream stdout/stderr budget; crossing it terminates the process tree. */
+export const WORKFLOW_SCRIPT_OUTPUT_LIMIT_BYTES = 5 * 1024 * 1024
+/** Trailing diagnostic buffer retained once a stream crosses the limit. */
+export const WORKFLOW_SCRIPT_OUTPUT_TAIL_BYTES = 64 * 1024
 
 type WorkflowDeterministicNodeExecutor = (
   request: WorkflowDeterministicNodeRequest,
@@ -54,6 +60,20 @@ interface WorkflowScriptProcessResult {
   stdout: string
   stderr: string
   timedOut: boolean
+  /** Stream that crossed the output limit, when the process was terminated for it. */
+  outputLimitStream: 'stdout' | 'stderr' | null
+  /** Set when the request's cancellation signal fired before a normal close. */
+  aborted: boolean
+}
+
+/** Keep only a trailing buffer for oversized streams (UTF-8 safe, best effort). */
+function retainedTail(value: string): string {
+  const maxChars = Math.floor(WORKFLOW_SCRIPT_OUTPUT_TAIL_BYTES / 4)
+  let tail = value.length > maxChars ? value.slice(-maxChars) : value
+  while (Buffer.byteLength(tail) > WORKFLOW_SCRIPT_OUTPUT_TAIL_BYTES && tail.length > 0) {
+    tail = tail.slice(Math.ceil(tail.length / 2))
+  }
+  return tail
 }
 
 function runWorkflowScriptProcess(args: {
@@ -61,6 +81,7 @@ function runWorkflowScriptProcess(args: {
   input: string
   timeoutMs: number | null
   workspace: string | null
+  signal?: AbortSignal
 }): Promise<WorkflowScriptProcessResult> {
   return new Promise((resolve, reject) => {
     // Structured argv only — never build a shell command string from node data.
@@ -74,30 +95,84 @@ function runWorkflowScriptProcess(args: {
     let stdout = ''
     let stderr = ''
     let timedOut = false
-    const timeoutTimer = args.timeoutMs !== null && args.timeoutMs > 0
+    let outputLimitStream: 'stdout' | 'stderr' | null = null
+    let aborted = false
+    const killTree = () => killOwnedProcessTree(child.pid, () => child.kill('SIGKILL'))
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null
+    let onAbort: () => void = () => {}
+    // Exactly one settlement: abort, output limit, timeout, spawn error, and
+    // close all funnel through here; later events are ignored.
+    const settle = (error: Error | null, result?: WorkflowScriptProcessResult) => {
+      if (settled) return
+      settled = true
+      if (timeoutTimer) clearTimeout(timeoutTimer)
+      args.signal?.removeEventListener('abort', onAbort)
+      if (error || !result) reject(error || new Error('workflow script process settled without a result'))
+      else resolve(result)
+    }
+    onAbort = () => {
+      if (settled) return
+      aborted = true
+      killTree()
+      settle(null, {
+        exitCode: null,
+        stdout: retainedTail(stdout),
+        stderr: retainedTail(stderr),
+        timedOut: false,
+        outputLimitStream: null,
+        aborted: true,
+      })
+    }
+    const exceedOutputLimit = (stream: 'stdout' | 'stderr') => {
+      if (settled || outputLimitStream) return
+      outputLimitStream = stream
+      killTree()
+      settle(null, {
+        exitCode: null,
+        stdout: retainedTail(stdout),
+        stderr: retainedTail(stderr),
+        timedOut: false,
+        outputLimitStream: stream,
+        aborted: false,
+      })
+    }
+    timeoutTimer = args.timeoutMs !== null && args.timeoutMs > 0
       ? setTimeout(() => {
+          // A timed-out script must take down the whole tree, not just the
+          // direct child — spawned workers otherwise survive the kill.
           timedOut = true
-          child.kill('SIGKILL')
+          killTree()
         }, args.timeoutMs)
       : null
+    if (args.signal?.aborted) onAbort()
+    else args.signal?.addEventListener('abort', onAbort, { once: true })
     child.stdout.setEncoding('utf8')
-    child.stdout.on('data', chunk => { stdout += chunk })
+    child.stdout.on('data', chunk => {
+      if (settled || outputLimitStream) return
+      stdout += chunk
+      if (Buffer.byteLength(stdout) > WORKFLOW_SCRIPT_OUTPUT_LIMIT_BYTES) exceedOutputLimit('stdout')
+    })
     child.stderr.setEncoding('utf8')
-    child.stderr.on('data', chunk => { stderr += chunk })
+    child.stderr.on('data', chunk => {
+      if (settled || outputLimitStream) return
+      stderr += chunk
+      if (Buffer.byteLength(stderr) > WORKFLOW_SCRIPT_OUTPUT_LIMIT_BYTES) exceedOutputLimit('stderr')
+    })
     // A script that exits without draining stdin raises EPIPE on the pipe; the
     // final result is still delivered through the 'close' event.
     child.stdin.on('error', () => {})
     child.on('error', err => {
-      if (settled) return
-      settled = true
-      if (timeoutTimer) clearTimeout(timeoutTimer)
-      reject(err)
+      settle(err)
     })
     child.on('close', exitCode => {
-      if (settled) return
-      settled = true
-      if (timeoutTimer) clearTimeout(timeoutTimer)
-      resolve({ exitCode, stdout, stderr, timedOut })
+      settle(null, {
+        exitCode,
+        stdout: outputLimitStream ? retainedTail(stdout) : stdout,
+        stderr: outputLimitStream ? retainedTail(stderr) : stderr,
+        timedOut,
+        outputLimitStream,
+        aborted,
+      })
     })
     child.stdin.end(args.input)
   })
@@ -134,7 +209,18 @@ async function executeScriptWorkflowNode(request: WorkflowDeterministicNodeReque
     input: request.input,
     timeoutMs: request.timeoutMs,
     workspace: request.workspace,
+    signal: request.signal,
   })
+  if (result.outputLimitStream) {
+    throw new Error(
+      `workflow script node "${request.title}" output limit exceeded on ${result.outputLimitStream}`
+      + ` (limit ${WORKFLOW_SCRIPT_OUTPUT_LIMIT_BYTES} bytes per stream);`
+      + ` only the trailing ${WORKFLOW_SCRIPT_OUTPUT_TAIL_BYTES} bytes were retained`,
+    )
+  }
+  if (result.aborted) {
+    throw new Error(`workflow script node "${request.title}" aborted before completion`)
+  }
   if (result.timedOut) {
     throw new Error(`workflow script node "${request.title}" timed out after ${request.timeoutMs}ms`)
   }

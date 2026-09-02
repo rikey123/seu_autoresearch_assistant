@@ -3283,7 +3283,8 @@ describe('workflow manager', () => {
       const scoped = rerun.nodeSessions.filter(session => session.execution_id.includes('@rerun:'))
       const rerunPaths = scoped.map(session => session.iteration_path as Array<Record<string, unknown>>)
       const executionScope = rerunPaths[0]?.[0]?.executionScope
-      expect(executionScope).toMatch(/^rerun:\d+$/)
+      // Execution scope is a unique random token (UUID), not a millisecond timestamp.
+      expect(executionScope).toMatch(/^rerun:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
       expect(rerunPaths.every(path => path.every(item => item.executionScope === executionScope))).toBe(true)
       expect(scoped.map(session => [session.node_id, (session.iteration_path as Array<Record<string, unknown>>).map(({ executionScope: _scope, ...item }) => item)])).toEqual([
         ['header', [{ loopId: 'loop:retry', iteration: 0 }]],

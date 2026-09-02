@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 
 const originalDeterministicTestDbDir = process.env.HERMES_WEB_UI_TEST_DB_DIR
 const originalDeterministicTestWebUiHome = process.env.HERMES_WEB_UI_HOME
@@ -313,5 +314,184 @@ describe('deterministic workflow dispatch', () => {
     expect(String(agentCall[0].input)).toContain('SCRIPT-DATA-42')
     const scriptRows = rerun.nodeSessions.filter(session => session.node_id === 'script-1')
     expect(scriptRows).toHaveLength(1)
+  })
+})
+
+describe('deterministic engine lifecycle', () => {
+  async function waitFor(predicate: () => boolean, timeoutMs: number, label: string): Promise<void> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      if (predicate()) return
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+    throw new Error(`timed out waiting for ${label}`)
+  }
+
+  function isProcessAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  function killPidSafe(pidPath: string): void {
+    try {
+      if (existsSync(pidPath)) process.kill(Number(readFileSync(pidPath, 'utf8')), 'SIGKILL')
+    } catch {
+      // Best-effort cleanup between assertions only.
+    }
+  }
+
+  /** Route the mocked runtime dependency through the real executor. */
+  function useRealExecutor(executor: Awaited<ReturnType<typeof importManagerUnderTest>>['executor']): void {
+    deterministicExecutorMock.run.mockImplementation(
+      request => executor.executeWorkflowDeterministicNode(request as Parameters<typeof executor.executeWorkflowDeterministicNode>[0]),
+    )
+  }
+
+  it('stopRun without a deadline kills a long-running script process and lands its node row canceled', { timeout: 30_000 }, async () => {
+    const { manager, workflowStore, executor } = await importManagerUnderTest()
+    const runStore = await import('../../packages/server/src/modules/studio/repositories/workflow-run-store')
+    const pidPath = join(deterministicTestRoot, `stop-pid-${randomUUID()}.txt`)
+    useRealExecutor(executor)
+
+    const workflow = workflowStore.createWorkflow({
+      name: 'stoppable long script', profile: 'default',
+      nodes: [{
+        id: 'long-1', type: 'script', data: {
+          title: 'Long', runtime: 'node',
+          code: `require('node:fs').writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));setInterval(() => {}, 250);`,
+        },
+      }],
+      edges: [],
+    })
+    const instance = new manager.WorkflowManager()
+    const runPromise = instance.runNow(workflow.id)
+    try {
+      await waitFor(() => existsSync(pidPath), 15000, 'script process to report its pid')
+      const pid = Number(readFileSync(pidPath, 'utf8'))
+      expect(pid).toBeGreaterThan(0)
+      expect(isProcessAlive(pid)).toBe(true)
+
+      await waitFor(() => Boolean(runStore.listWorkflowRuns(workflow.id)[0]), 5000, 'the run row to be persisted')
+      const runId = runStore.listWorkflowRuns(workflow.id)[0]!.id
+      await instance.stopRun(workflow.id, runId, 'operator stopped long script')
+
+      const result = await runPromise
+      expect(result.run.status).toBe('canceled')
+      expect(result.run.error).toBe('operator stopped long script')
+      expect(chatRunMock.runAndWait).not.toHaveBeenCalled()
+      expect(chatRunMock.abortSession).not.toHaveBeenCalled()
+      const rows = result.nodeSessions.filter(session => session.node_id === 'long-1')
+      expect(rows).toHaveLength(1)
+      expect(rows[0].session_id).toBe('')
+      expect(rows[0].status).toBe('canceled')
+      expect(rows[0].error).toBe('operator stopped long script')
+
+      await waitFor(() => !isProcessAlive(pid), 10000, 'the script process to exit after stopRun')
+      expect(isProcessAlive(pid)).toBe(false)
+    } finally {
+      killPidSafe(pidPath)
+    }
+  })
+
+  it.runIf(process.platform === 'win32')('run deadline after a script spawned a grandchild tears down the whole process tree', { timeout: 30_000 }, async () => {
+    const { manager, workflowStore, executor } = await importManagerUnderTest()
+    const childPidPath = join(deterministicTestRoot, `tree-child-${randomUUID()}.txt`)
+    const grandchildPidPath = join(deterministicTestRoot, `tree-grandchild-${randomUUID()}.txt`)
+    useRealExecutor(executor)
+
+    const workflow = workflowStore.createWorkflow({
+      name: 'tree teardown script', profile: 'default',
+      nodes: [{
+        id: 'tree-1', type: 'script', data: {
+          title: 'Tree', runtime: 'node',
+          code: [
+            `const fs = require('node:fs');`,
+            `const { spawn } = require('node:child_process');`,
+            `const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 250)'], { stdio: 'ignore' });`,
+            `fs.writeFileSync(${JSON.stringify(grandchildPidPath)}, String(grandchild.pid));`,
+            `fs.writeFileSync(${JSON.stringify(childPidPath)}, String(process.pid));`,
+            `setInterval(() => {}, 250);`,
+          ].join(''),
+        },
+      }],
+      edges: [],
+    })
+    const instance = new manager.WorkflowManager()
+    const result = await instance.runNow(workflow.id, { timeoutMs: 1500 })
+
+    expect(result.run.status).toBe('failed')
+    expect(result.run.error).toBe('workflow run timed out after 1500ms')
+    const row = result.nodeSessions.find(session => session.node_id === 'tree-1')!
+    expect(row.status).toBe('failed')
+    expect(row.error).toBe('workflow run timed out after 1500ms')
+
+    const childPid = Number(readFileSync(childPidPath, 'utf8'))
+    const grandchildPid = Number(readFileSync(grandchildPidPath, 'utf8'))
+    expect(childPid).toBeGreaterThan(0)
+    expect(grandchildPid).toBeGreaterThan(0)
+    await waitFor(() => !isProcessAlive(childPid) && !isProcessAlive(grandchildPid), 10000, 'the whole script process tree to exit')
+    expect(isProcessAlive(childPid)).toBe(false)
+    expect(isProcessAlive(grandchildPid)).toBe(false)
+  })
+
+  it('fails script nodes with a structured error when stdout or stderr crosses the output limit', { timeout: 30_000 }, async () => {
+    const { executor } = await importManagerUnderTest()
+    const baseRequest = {
+      workflowId: 'wf-limit', runId: 'run-limit', nodeType: 'script',
+      data: {}, input: '', timeoutMs: 60000, workspace: null,
+    }
+    const megabyteX = '"x".repeat(1024 * 1024)'
+    const megabyteY = '"y".repeat(1024 * 1024)'
+
+    const startedAt = Date.now()
+    await expect(executor.executeWorkflowDeterministicNode({
+      ...baseRequest, nodeId: 'burst-stdout', title: 'BurstStdout',
+      data: { code: `for (let i = 0; i < 8; i += 1) console.log(${megabyteX})` },
+    })).rejects.toThrow(/output limit exceeded on stdout \(limit 5242880 bytes per stream\)/)
+    // The limit must terminate the process long before the 60s timeout backstop.
+    expect(Date.now() - startedAt).toBeLessThan(30000)
+
+    await expect(executor.executeWorkflowDeterministicNode({
+      ...baseRequest, nodeId: 'burst-stderr', title: 'BurstStderr',
+      data: { code: `for (let i = 0; i < 8; i += 1) console.error(${megabyteY})` },
+    })).rejects.toThrow(/output limit exceeded on stderr \(limit 5242880 bytes per stream\)/)
+  })
+
+  it('accepts only one of two concurrent reruns and stamps a unique random execution scope', async () => {
+    const { manager, workflowStore } = await importManagerUnderTest()
+    const runStore = await import('../../packages/server/src/modules/studio/repositories/workflow-run-store')
+    chatRunMock.runAndWait.mockResolvedValue({ ok: true, output: 'agent output' })
+    deterministicExecutorMock.run.mockResolvedValueOnce({ output: 'FIRST' })
+
+    const workflow = workflowStore.createWorkflow({
+      name: 'rerun race', profile: 'default',
+      nodes: [{ id: 'solo', type: 'script', data: { title: 'Solo', runtime: 'node', code: 'console.log(1)' } }],
+      edges: [],
+    })
+    const instance = new manager.WorkflowManager()
+    const first = await instance.runNow(workflow.id)
+    expect(first.run.status).toBe('completed')
+
+    let release!: () => void
+    const held = new Promise<{ ok: true; output: string }>(resolve => { release = () => resolve({ ok: true, output: 'rerun' }) })
+    deterministicExecutorMock.run.mockImplementation(() => held)
+
+    const rerunPromise = instance.rerunFromNode(workflow.id, first.run.id, 'solo')
+    await vi.waitFor(() => expect(instance.getRuntimeStatus(workflow.id).status).toBe('running'))
+    await expect(instance.rerunFromNode(workflow.id, first.run.id, 'solo')).rejects.toThrow('still active')
+    release()
+    await expect(rerunPromise).resolves.toMatchObject({ run: { status: 'completed' } })
+
+    const rerunRows = runStore.listWorkflowRunNodeSessions(first.run.id).filter(row => row.execution_id.includes('@rerun:'))
+    expect(rerunRows.length).toBeGreaterThan(0)
+    const scope = (rerunRows[0].iteration_path as Array<{ executionScope?: string }>)[0]?.executionScope
+    // The scope is a unique random token (UUID), never a millisecond timestamp.
+    expect(scope).toMatch(/^rerun:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    expect(scope).not.toMatch(/^rerun:\d+$/)
+    expect(rerunRows.every(row => row.execution_id.includes(String(scope)))).toBe(true)
   })
 })
