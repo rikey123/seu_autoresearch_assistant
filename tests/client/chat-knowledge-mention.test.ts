@@ -242,4 +242,66 @@ describe('ChatInput knowledge base @ mention', () => {
     await typeText(wrapper as any, '@')
     expect(wrapper.find('[data-testid="kb-mention-dropdown"]').exists()).toBe(false)
   })
+
+  it('refreshes the knowledge base picker when IME composition ends', async () => {
+    const rafSpy = vi.spyOn(globalThis, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback) => {
+        callback(0)
+        return 0
+      })
+    try {
+      const { wrapper } = mountForSession('session-ime')
+      const textarea = wrapper.get('textarea')
+      const input = textarea.element as HTMLTextAreaElement
+
+      await textarea.trigger('compositionstart')
+      input.value = '@'
+      input.setSelectionRange(1, 1)
+      await textarea.trigger('input')
+      await flushPromises()
+      // While composing, input events skip mention recomputation, so the
+      // picker stays closed even though the text is a valid @ mention.
+      expect(wrapper.find('[data-testid="kb-mention-dropdown"]').exists()).toBe(false)
+
+      await textarea.trigger('compositionend')
+      await flushPromises()
+
+      expect(knowledgeApi.listCollections).toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="kb-mention-dropdown"]').exists()).toBe(true)
+    } finally {
+      rafSpy.mockRestore()
+    }
+  })
+
+  it('does not duplicate the prefix when the cursor moved before the @ before confirming', async () => {
+    const { wrapper, knowledgeStore } = mountForSession('session-kb-cursor')
+    await typeText(wrapper as any, 'hello @tra')
+    expect(wrapper.find('[data-testid="kb-mention-dropdown"]').exists()).toBe(true)
+
+    // Home key / mouse click: move the cursor before the @ while the picker
+    // is still open, then confirm with Enter. The stale anchor must not splice
+    // slice(0, atPos) + slice(cursorPos) (that would duplicate the prefix).
+    const textarea = wrapper.get('textarea')
+    ;(textarea.element as HTMLTextAreaElement).setSelectionRange(0, 0)
+    await textarea.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(knowledgeStore.selectionBySession['session-kb-cursor']).toBeUndefined()
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('hello @tra')
+    expect(wrapper.find('[data-testid="kb-mention-dropdown"]').exists()).toBe(false)
+  })
+
+  it('closes the picker without inserting when confirming by click with a moved cursor', async () => {
+    const { wrapper, knowledgeStore } = mountForSession('session-kb-cursor-click')
+    await typeText(wrapper as any, 'hello @tra')
+    expect(wrapper.find('[data-testid="kb-mention-dropdown"]').exists()).toBe(true)
+
+    ;(wrapper.get('textarea').element as HTMLTextAreaElement).setSelectionRange(0, 0)
+    await wrapper.get('[data-kb-id="col-1"]').trigger('mousedown')
+    await flushPromises()
+
+    expect(knowledgeStore.selectionBySession['session-kb-cursor-click']).toBeUndefined()
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('hello @tra')
+    expect(wrapper.find('[data-testid="kb-mention-dropdown"]').exists()).toBe(false)
+  })
 })

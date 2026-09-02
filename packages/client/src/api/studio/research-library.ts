@@ -37,11 +37,21 @@ export async function deletePaper(id: string): Promise<void> {
   })
 }
 
+// Token-free streaming endpoint path. Message bodies (chat transcripts,
+// exports) must never persist an access token, so references baked into text
+// use this form; previews and downloads inside the app still authenticate
+// through the session (Authorization header via the request helper / router
+// preview), and paperFileUrl() keeps the token variant for iframe streams
+// where no header can be attached.
+export function paperFilePath(id: string): string {
+  return `/api/studio/research/library/papers/${encodeURIComponent(id)}/file`
+}
+
 // The streaming endpoint backs the native PDF viewer inside an iframe, where
 // no Authorization header can be attached; the JWT middleware also accepts a
 // token query parameter, mirroring the session export download URL.
 export function paperFileUrl(id: string): string {
-  const base = `/api/studio/research/library/papers/${encodeURIComponent(id)}/file`
+  const base = paperFilePath(id)
   const token = getApiKey()
   return token ? `${base}?token=${encodeURIComponent(token)}` : base
 }

@@ -226,19 +226,22 @@ export function getRagDb(): DatabaseSync {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_rag_questions_collection ON ${QUESTIONS_TABLE}(collection_id, created_at)`)
     // A task cannot still be running when the database is opened by a fresh
     // process: any persisted "running" row is leftover from an interrupted
-    // server run and is moved to failed with an explicit error. Collections
-    // left in the transient 'indexing' state fall back to 'stale'/'unindexed'
+    // server run and is moved to failed with an explicit error. Queued rows
+    // get the same cleanup — the in-memory worker queue died with the old
+    // process, so a queued row would otherwise sit forever and keep
+    // getLatestIndexJob reporting a stale non-terminal job. Collections left
+    // in the transient 'indexing' state fall back to 'stale'/'unindexed'
     // depending on whether an index had been built before.
     db.exec(`UPDATE ${INDEX_JOBS_TABLE}
       SET status = 'failed',
-          error = COALESCE(error, 'interrupted: server restarted while the index job was running'),
+          error = COALESCE(error, 'interrupted: server restarted while the index job was queued or running'),
           finished_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
-      WHERE status = 'running'`)
+      WHERE status IN ('queued', 'running')`)
     db.exec(`UPDATE ${QUESTIONS_TABLE}
       SET status = 'failed',
-          error = COALESCE(error, 'interrupted: server restarted while the question was running'),
+          error = COALESCE(error, 'interrupted: server restarted while the question was queued or running'),
           finished_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
-      WHERE status = 'running'`)
+      WHERE status IN ('queued', 'running')`)
     db.exec(`UPDATE ${COLLECTIONS_TABLE}
       SET index_status = CASE WHEN indexed_at IS NULL THEN 'unindexed' ELSE 'stale' END,
           updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000

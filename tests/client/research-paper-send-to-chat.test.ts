@@ -8,7 +8,12 @@ import type { PaperRecord } from '@/api/studio/research-library'
 const listPapersMock = vi.hoisted(() => vi.fn())
 const uploadPaperMock = vi.hoisted(() => vi.fn())
 const deletePaperMock = vi.hoisted(() => vi.fn())
+// Mirror production: the token-bearing URL is for iframe streaming only, the
+// token-free path is what message bodies must use.
 const paperFileUrlMock = vi.hoisted(() =>
+  vi.fn((id: string) => `/api/studio/research/library/papers/${id}/file?token=jwt-from-localstorage`),
+)
+const paperFilePathMock = vi.hoisted(() =>
   vi.fn((id: string) => `/api/studio/research/library/papers/${id}/file`),
 )
 const routerPushMock = vi.hoisted(() => vi.fn())
@@ -24,6 +29,7 @@ vi.mock('@/api/studio/research-library', () => ({
   uploadPaper: uploadPaperMock,
   deletePaper: deletePaperMock,
   paperFileUrl: paperFileUrlMock,
+  paperFilePath: paperFilePathMock,
 }))
 
 // Stub of the chat store: the send action must go through the regular chat
@@ -133,6 +139,13 @@ describe('paper artifact to chat message body', () => {
     // No markdown link syntax: a relative link would render as a dead
     // download card in chat, so the URL stays plain text.
     expect(body).not.toContain('](/api/')
+    // The message is persisted into the transcript: the access token must
+    // never be baked into it (paperFilePath, not the token-bearing
+    // paperFileUrl used for iframe streaming).
+    expect(body).not.toContain('token=')
+    expect(body).not.toContain('?token=')
+    expect(paperFileUrlMock).not.toHaveBeenCalled()
+    expect(paperFilePathMock).toHaveBeenCalledWith('paper-1')
   })
 
   it('omits empty metadata lines and falls back to the file name for the title', () => {

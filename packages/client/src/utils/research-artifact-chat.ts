@@ -1,5 +1,5 @@
 import type { PaperRecord } from '@/api/studio/research-library'
-import { paperFileUrl } from '@/api/studio/research-library'
+import { paperFilePath } from '@/api/studio/research-library'
 
 // Build the chat message that carries a paper reference from the research
 // workbench into a conversation. The send channel is the existing plain-text
@@ -26,5 +26,8 @@ export function buildPaperChatMessage(paper: PaperRecord, fileUrl: string): stri
 }
 
 export function buildPaperChatMessageForId(paper: PaperRecord): string {
-  return buildPaperChatMessage(paper, paperFileUrl(paper.id))
+  // Token-free path: the message is persisted into the transcript, so the
+  // access token must never be embedded in it. In-app preview/download is
+  // still covered by the session (Authorization header / router preview).
+  return buildPaperChatMessage(paper, paperFilePath(paper.id))
 }

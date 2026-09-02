@@ -500,8 +500,9 @@ onBeforeUnmount(() => {
 async function handleMarkdownClick(event: MouseEvent): Promise<void> {
   const target = event.target as HTMLElement
 
-  // VCP card chrome (collapse/height) is handled first; clicks inside the
-  // sandboxed iframe never bubble here because of the opaque origin.
+  // VCP card chrome (collapse/height) is handled first; clicks inside a card's
+  // iframe land in the iframe's own document and never bubble into this
+  // handler, so only the card header buttons outside the frame reach here.
   const vcpActionButton = target.closest<HTMLElement>('[data-vcp-action]')
   if (vcpActionButton) {
     event.preventDefault()

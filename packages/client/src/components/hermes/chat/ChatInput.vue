@@ -305,15 +305,25 @@ function scrollKbMentionIntoView() {
 function selectKbCollection(collection: RagCollection) {
   const sessionId = chatStore.activeSessionId
   if (!sessionId) return
-  chatKnowledgeStore.selectForSession(sessionId, collection.id)
   const el = textareaRef.value
-  if (el && kbMentionStartIndex.value >= 0) {
-    const cursorPos = el.selectionStart
-    inputText.value = inputText.value.slice(0, kbMentionStartIndex.value) + inputText.value.slice(cursorPos)
+  const cursorPos = el ? el.selectionStart : -1
+  const atPos = kbMentionStartIndex.value
+  // Revalidate the mention anchor at confirm time. The user may move the
+  // cursor (Home key, mouse click) while the picker is open, and inserting
+  // with a stale cursor would splice slice(0, atPos) + slice(cursorPos),
+  // duplicating the prefix text. An invalid anchor closes the picker without
+  // inserting or arming; the mention is abandoned.
+  const anchorValid = el != null
+    && atPos >= 0
+    && cursorPos > atPos
+    && inputText.value[atPos] === '@'
+  if (anchorValid) {
+    inputText.value = inputText.value.slice(0, atPos) + inputText.value.slice(cursorPos)
     nextTick(() => {
-      el.setSelectionRange(kbMentionStartIndex.value, kbMentionStartIndex.value)
+      el.setSelectionRange(atPos, atPos)
       el.focus()
     })
+    chatKnowledgeStore.selectForSession(sessionId, collection.id)
   }
   kbMentionActive.value = false
 }
@@ -1127,6 +1137,10 @@ function handleCompositionEnd() {
   requestAnimationFrame(() => {
     isComposing.value = false
     updateSlashState()
+    // IME input events are skipped while composing, so the @ mention anchor
+    // must be recomputed when the composition commits — otherwise a KB picker
+    // typed through IME stays stale (or never opens).
+    updateKbMentionState()
   })
 }
 

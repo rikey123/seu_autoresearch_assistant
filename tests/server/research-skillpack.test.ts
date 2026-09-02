@@ -34,12 +34,12 @@ type SkillpackServiceModule = typeof import('../../packages/server/src/modules/r
 let routes: SkillpackRoutesModule
 let service: SkillpackServiceModule
 
-async function dispatch(method: string, path: string, body?: unknown) {
+async function dispatch(method: string, path: string, body?: unknown, query: Record<string, string> = {}) {
   const dispatchRoute = routes.skillpacksRoutes.routes()
   const ctx: any = {
     method,
     path,
-    query: {},
+    query,
     params: {},
     request: { body },
     state: {},
@@ -143,6 +143,28 @@ describe('research skill pack HTTP surface', () => {
     expect((await dispatch('GET', '/api/studio/research/skillpacks/nope')).status).toBe(404)
     expect((await dispatch('POST', '/api/studio/research/skillpacks/nope/load', {})).status).toBe(404)
     expect((await dispatch('POST', '/api/studio/research/skillpacks/nope/unload', {})).status).toBe(404)
+  })
+
+  it('rejects unknown profiles on every route and in the service facade', async () => {
+    // The profile option resolves to a real directory on disk, so it must be a
+    // known profile — an arbitrary string must never be applied.
+    const badList = await dispatch('GET', '/api/studio/research/skillpacks', undefined, { profile: 'nope' })
+    expect(badList.status).toBe(400)
+    expect(badList.body.error).toContain('unknown profile "nope"')
+
+    const badGet = await dispatch('GET', `/api/studio/research/skillpacks/${PACK_ID}`, undefined, { profile: 'nope' })
+    expect(badGet.status).toBe(400)
+    expect(badGet.body.error).toContain('known profiles')
+
+    const badLoad = await dispatch('POST', `/api/studio/research/skillpacks/${PACK_ID}/load`, { profile: 'nope' })
+    expect(badLoad.status).toBe(400)
+    expect(badLoad.body.error).toContain('unknown profile "nope"')
+
+    const badUnload = await dispatch('POST', `/api/studio/research/skillpacks/${PACK_ID}/unload`, { profile: 'nope' })
+    expect(badUnload.status).toBe(400)
+
+    await expect(service.loadSkillPack(PACK_ID, { profile: 'nope' })).rejects.toThrow(/unknown profile "nope"/)
+    await expect(service.unloadSkillPack(PACK_ID, { profile: 'nope' })).rejects.toThrow(/unknown profile "nope"/)
   })
 
   it('loads every skill into the profile skills dir and reports the installed status', async () => {
