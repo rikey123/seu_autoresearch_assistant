@@ -447,8 +447,16 @@ export default {
       backToList: 'Volver a la lista',
       previewFrame: 'Vista previa del PDF',
       reload: 'Recargar',
+      sendToChat: 'Enviar al chat',
+      sendToChatTitle: 'Enviar al chat',
+      sendToChatNewSession: 'Nuevo chat',
+      sendToChatEmpty: 'Aún no hay conversaciones',
+      sendToChatLoading: 'Cargando conversaciones…',
+      sendToChatSend: 'Enviar',
+      sendToChatSuccess: 'Artículo enviado al chat.',
+      sendToChatFailed: 'No se pudo enviar el artículo al chat.',
+      sendToChatPreview: 'Vista previa del mensaje',
     },
-  
     latex: {
       documentsTitle: 'Documentos',
       newDocument: 'Nuevo',
@@ -476,6 +484,8 @@ export default {
       emptyDocuments: 'Aún no hay documentos. Crea uno para empezar a escribir.',
       deleteDocument: 'Eliminar documento',
     },
+  
+
 
     rag: {
       newCollection: 'Nueva base de conocimiento',
@@ -912,6 +922,21 @@ export default {
 
   // Chat
   chat: {
+    vcp: {
+      renderToggle: 'Alternar el renderizado de tarjetas VCP',
+      aestheticToggle: 'Alternar el estilo estético de las tarjetas',
+      renderOn: 'Renderizado de tarjetas VCP activado',
+      renderOff: 'Renderizado de tarjetas VCP desactivado',
+      typeHtml: 'HTML',
+      typeSvg: 'SVG',
+      typeMermaid: 'Mermaid',
+      typeKatex: 'KaTeX',
+      collapse: 'Contraer tarjeta',
+      changeHeight: 'Ajustar la altura de la tarjeta',
+      frameTitle: 'Vista previa de la tarjeta {type}',
+      katexFailed: 'KaTeX no pudo renderizar este bloque; se muestra el código fuente en su lugar.',
+      mermaidFailed: 'Mermaid no pudo renderizar este diagrama; se muestra el código fuente en su lugar.',
+    },
     contextRemaining: 'restante',
     contextClickToEdit: 'Haz clic para editar la longitud del contexto',
     contextEditTitle: 'Editar longitud del contexto',

@@ -435,8 +435,16 @@ export default {
       backToList: 'العودة إلى القائمة',
       previewFrame: 'معاينة PDF',
       reload: 'إعادة التحميل',
+      sendToChat: 'إرسال إلى المحادثة',
+      sendToChatTitle: 'إرسال إلى المحادثة',
+      sendToChatNewSession: 'محادثة جديدة',
+      sendToChatEmpty: 'لا توجد محادثات بعد',
+      sendToChatLoading: 'جارٍ تحميل المحادثات…',
+      sendToChatSend: 'إرسال',
+      sendToChatSuccess: 'تم إرسال الورقة إلى المحادثة.',
+      sendToChatFailed: 'فشل إرسال الورقة إلى المحادثة.',
+      sendToChatPreview: 'معاينة الرسالة',
     },
-  
     latex: {
       documentsTitle: 'المستندات',
       newDocument: 'جديد',
@@ -464,6 +472,8 @@ export default {
       emptyDocuments: 'لا توجد مستندات بعد. أنشئ مستندًا لبدء الكتابة.',
       deleteDocument: 'حذف المستند',
     },
+  
+
 
     rag: {
       newCollection: 'قاعدة معرفة جديدة',
@@ -926,6 +936,21 @@ export default {
 
   // Chat
   chat: {
+    vcp: {
+      renderToggle: 'تبديل عرض بطاقات VCP',
+      aestheticToggle: 'تبديل تنسيق البطاقات',
+      renderOn: 'تم تفعيل عرض بطاقات VCP',
+      renderOff: 'تم إيقاف عرض بطاقات VCP',
+      typeHtml: 'HTML',
+      typeSvg: 'SVG',
+      typeMermaid: 'Mermaid',
+      typeKatex: 'KaTeX',
+      collapse: 'طي البطاقة',
+      changeHeight: 'ضبط ارتفاع البطاقة',
+      frameTitle: 'معاينة بطاقة {type}',
+      katexFailed: 'تعذّر على KaTeX عرض هذا المقطع؛ يُعرض المصدر بدلًا منه.',
+      mermaidFailed: 'تعذّر على Mermaid عرض هذا المخطط؛ يُعرض المصدر بدلًا منه.',
+    },
     contextRemaining: 'متبقٍ',
     contextClickToEdit: 'اضغط لتعديل طول السياق',
     contextEditTitle: 'تعديل طول السياق',

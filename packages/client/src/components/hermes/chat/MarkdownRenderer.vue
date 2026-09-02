@@ -17,6 +17,16 @@ import {
   isMermaidFence,
   renderMermaidPlaceholder,
 } from './mermaidRenderer'
+import {
+  applyVcpCardAction,
+  encodeVcpPayload,
+  mountVcpCardFrames,
+  renderVcpCardPlaceholder,
+  vcpCardTypeFromFence,
+  type VcpCardLabels,
+  type VcpCardType,
+} from './vcpCards'
+import { useVcpPrefsStore } from '@/stores/hermes/vcp-prefs'
 import { downloadFile, getDownloadUrl, inferDownloadFileName } from '@/api/studio/download'
 import { isPreviewableFile } from '@/utils/hermes/file-preview'
 import { openUrlInDesktopBrowser } from '@/utils/desktop-browser'
@@ -74,6 +84,52 @@ function diffFoldLabel(hiddenCount: number): string {
   return t('chat.unchangedLines', { count: hiddenCount })
 }
 
+// VCP card layer (html/svg/mermaid/katex fences rendered as sandboxed cards).
+// The toggle defaults to off, which keeps the pre-VCP rendering behavior.
+const vcpPrefs = useVcpPrefsStore()
+const vcpRenderEnabled = computed(() => vcpPrefs.renderEnabled)
+const vcpAestheticEnabled = computed(() => vcpPrefs.aestheticEnabled)
+
+const VCP_CARD_TYPE_LABEL_KEYS: Record<VcpCardType, string> = {
+  html: 'chat.vcp.typeHtml',
+  svg: 'chat.vcp.typeSvg',
+  mermaid: 'chat.vcp.typeMermaid',
+  katex: 'chat.vcp.typeKatex',
+}
+
+function vcpCardSourceLabel(): string {
+  // The heading-id prefix carries the message id (msg-<id>), so each card
+  // names the message it was rendered from.
+  return props.headingIdPrefix
+}
+
+function vcpCardLabels(type: VcpCardType): VcpCardLabels {
+  return {
+    typeLabel: t(VCP_CARD_TYPE_LABEL_KEYS[type]),
+    sourceLabel: vcpCardSourceLabel(),
+    collapseLabel: t('chat.vcp.collapse'),
+    heightLabel: t('chat.vcp.changeHeight'),
+  }
+}
+
+function renderVcpFallbackNote(noteKey: string, code: string, lang: string): string {
+  return [
+    `<div class="vcp-render-fallback-note">${t(noteKey)}</div>`,
+    renderHighlightedCodeBlock(code, lang, t('common.copy')),
+  ].join('')
+}
+
+function renderKatexCard(content: string): string {
+  try {
+    return renderVcpCardPlaceholder('katex', vcpCardLabels('katex'), {
+      bodyHtml: renderLatexFence(content),
+      withHeight: false,
+    })
+  } catch {
+    return renderVcpFallbackNote('chat.vcp.katexFailed', content, 'katex')
+  }
+}
+
 const md: MarkdownIt = new MarkdownItConstructor({
   html: false,
   breaks: true,
@@ -121,6 +177,26 @@ const defaultFenceRenderer = md.renderer.rules.fence?.bind(md.renderer.rules)
 
 md.renderer.rules.fence = (tokens, idx, options, env, self) => {
   const token = tokens[idx]
+  const cardType = vcpRenderEnabled.value ? vcpCardTypeFromFence(token.info) : null
+
+  if (cardType === 'katex') {
+    return renderKatexCard(token.content)
+  }
+
+  if (cardType === 'mermaid') {
+    return renderVcpCardPlaceholder('mermaid', vcpCardLabels('mermaid'), {
+      bodyHtml: renderMermaidPlaceholder(token.content),
+    })
+  }
+
+  if (cardType === 'html' || cardType === 'svg') {
+    return renderVcpCardPlaceholder(cardType, vcpCardLabels(cardType), {
+      frameType: cardType,
+      payload: encodeVcpPayload(token.content),
+      frameTitle: t('chat.vcp.frameTitle', { type: t(VCP_CARD_TYPE_LABEL_KEYS[cardType]) }),
+    })
+  }
+
   if (isLatexFence(token.info)) {
     return renderLatexFence(token.content)
   }
@@ -282,7 +358,7 @@ const renderedHtml = computed(() => {
 })
 
 function renderMermaidFallback(element: HTMLElement, source: string): void {
-  element.outerHTML = renderHighlightedCodeBlock(source, 'mermaid', t('common.copy'))
+  element.outerHTML = renderVcpFallbackNote('chat.vcp.mermaidFailed', source, 'mermaid')
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -407,10 +483,12 @@ async function renderMermaidDiagrams(): Promise<void> {
 }
 
 onMounted(() => {
+  if (markdownBody.value) mountVcpCardFrames(markdownBody.value)
   void renderMermaidDiagrams()
 })
 
 watch(renderedHtml, () => {
+  if (markdownBody.value) mountVcpCardFrames(markdownBody.value)
   void renderMermaidDiagrams()
 }, { flush: 'post' })
 
@@ -420,6 +498,19 @@ onBeforeUnmount(() => {
 })
 
 async function handleMarkdownClick(event: MouseEvent): Promise<void> {
+  const target = event.target as HTMLElement
+
+  // VCP card chrome (collapse/height) is handled first; clicks inside the
+  // sandboxed iframe never bubble here because of the opaque origin.
+  const vcpActionButton = target.closest<HTMLElement>('[data-vcp-action]')
+  if (vcpActionButton) {
+    event.preventDefault()
+    event.stopPropagation()
+    const card = vcpActionButton.closest<HTMLElement>('[data-vcp-card]')
+    if (card) applyVcpCardAction(card, vcpActionButton.dataset.vcpAction)
+    return
+  }
+
   const copyResult = await handleCodeBlockCopyClick(event)
   if (copyResult !== null) {
     if (copyResult) {
@@ -429,8 +520,6 @@ async function handleMarkdownClick(event: MouseEvent): Promise<void> {
     }
     return
   }
-
-  const target = event.target as HTMLElement
 
   // Handle image clicks for preview
   const img = target.closest('img') as HTMLImageElement | null
@@ -524,7 +613,14 @@ async function handleMarkdownClick(event: MouseEvent): Promise<void> {
 </script>
 
 <template>
-  <div ref="markdownBody" class="markdown-body" dir="auto" v-html="renderedHtml" @click="handleMarkdownClick"></div>
+  <div
+    ref="markdownBody"
+    class="markdown-body"
+    :class="{ 'vcp-aesthetic': vcpAestheticEnabled }"
+    dir="auto"
+    v-html="renderedHtml"
+    @click="handleMarkdownClick"
+  ></div>
   <Teleport to="body">
     <div v-if="previewUrl" class="image-preview-overlay" @click.self="previewUrl = null">
       <img :src="previewUrl" class="image-preview-img" @click="previewUrl = null" />
@@ -801,6 +897,150 @@ async function handleMarkdownClick(event: MouseEvent): Promise<void> {
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  // VCP card layer: html/svg/mermaid/katex fences rendered as sandboxed cards.
+  .vcp-card {
+    margin: 10px 0;
+    border: 1px solid $border-color;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.02);
+    overflow: hidden;
+
+    .vcp-card-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px;
+      border-bottom: 1px solid $border-light;
+      background: rgba(var(--accent-primary-rgb), 0.05);
+      font-size: 11px;
+      line-height: 18px;
+      color: $text-secondary;
+    }
+
+    .vcp-card-type {
+      flex-shrink: 0;
+      font-family: $font-code;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: $accent-primary;
+    }
+
+    .vcp-card-source {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: $text-muted;
+    }
+
+    .vcp-card-actions {
+      display: inline-flex;
+      flex-shrink: 0;
+      gap: 2px;
+    }
+
+    .vcp-card-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: $text-secondary;
+      cursor: pointer;
+      border-radius: 4px;
+
+      &:hover {
+        background: rgba(0, 0, 0, 0.06);
+        color: $text-primary;
+      }
+    }
+
+    .vcp-card-chevron {
+      transition: transform 0.15s ease;
+    }
+
+    &[data-vcp-collapsed='true'] {
+      .vcp-card-chevron {
+        transform: rotate(-90deg);
+      }
+
+      .vcp-card-body {
+        display: none;
+      }
+
+      .vcp-card-header {
+        border-bottom-color: transparent;
+      }
+    }
+
+    .vcp-card-body {
+      height: 320px;
+      box-sizing: border-box;
+      overflow: auto;
+    }
+
+    &[data-vcp-height-step='1'] .vcp-card-body {
+      height: 520px;
+    }
+
+    &[data-vcp-height-step='2'] .vcp-card-body {
+      height: 760px;
+    }
+
+    &[data-vcp-card='katex'] .vcp-card-body {
+      height: auto;
+      overflow: visible;
+    }
+
+    .vcp-card-frame-slot {
+      width: 100%;
+      height: 100%;
+      min-height: 60px;
+    }
+
+    .vcp-card-frame {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: transparent;
+    }
+
+    .mermaid-diagram {
+      margin: 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+    }
+  }
+
+  .vcp-render-fallback-note {
+    margin: 8px 0 0;
+    padding: 3px 8px;
+    font-size: 12px;
+    color: $warning;
+    border-inline-start: 3px solid $warning;
+  }
+
+  // Aesthetic toggle: stronger visual separation for rendered artifact cards.
+  &.vcp-aesthetic .vcp-card {
+    border-color: rgba(var(--accent-primary-rgb), 0.35);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+
+    .vcp-card-header {
+      background: linear-gradient(
+        90deg,
+        rgba(var(--accent-primary-rgb), 0.14),
+        rgba(var(--accent-primary-rgb), 0.04)
+      );
+    }
   }
 }
 

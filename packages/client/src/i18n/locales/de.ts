@@ -447,8 +447,16 @@ export default {
       backToList: 'Zurück zur Übersicht',
       previewFrame: 'PDF-Vorschau',
       reload: 'Neu laden',
+      sendToChat: 'An Chat senden',
+      sendToChatTitle: 'An Chat senden',
+      sendToChatNewSession: 'Neuer Chat',
+      sendToChatEmpty: 'Noch keine Unterhaltungen',
+      sendToChatLoading: 'Unterhaltungen werden geladen…',
+      sendToChatSend: 'Senden',
+      sendToChatSuccess: 'Paper wurde an den Chat gesendet.',
+      sendToChatFailed: 'Paper konnte nicht an den Chat gesendet werden.',
+      sendToChatPreview: 'Nachrichtenvorschau',
     },
-  
     latex: {
       documentsTitle: 'Dokumente',
       newDocument: 'Neu',
@@ -476,6 +484,8 @@ export default {
       emptyDocuments: 'Noch keine Dokumente. Erstelle eines und leg los.',
       deleteDocument: 'Dokument löschen',
     },
+  
+
 
     rag: {
       newCollection: 'Neue Wissensbasis',
@@ -912,6 +922,21 @@ export default {
 
   // Chat
   chat: {
+    vcp: {
+      renderToggle: 'VCP-Kartenrendering umschalten',
+      aestheticToggle: 'Karten-Ästhetik umschalten',
+      renderOn: 'VCP-Kartenrendering aktiviert',
+      renderOff: 'VCP-Kartenrendering deaktiviert',
+      typeHtml: 'HTML',
+      typeSvg: 'SVG',
+      typeMermaid: 'Mermaid',
+      typeKatex: 'KaTeX',
+      collapse: 'Karte einklappen',
+      changeHeight: 'Kartenhöhe anpassen',
+      frameTitle: '{type}-Kartenvorschau',
+      katexFailed: 'KaTeX konnte diesen Block nicht rendern; stattdessen wird der Quelltext angezeigt.',
+      mermaidFailed: 'Mermaid konnte dieses Diagramm nicht rendern; stattdessen wird der Quelltext angezeigt.',
+    },
     contextRemaining: 'übrig',
     contextClickToEdit: 'Klicken zum Bearbeiten der Kontextlänge',
     contextEditTitle: 'Kontextlänge bearbeiten',

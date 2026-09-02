@@ -447,8 +447,16 @@ export default {
       backToList: '一覧に戻る',
       previewFrame: 'PDF プレビュー',
       reload: '再読み込み',
+      sendToChat: 'チャットへ送信',
+      sendToChatTitle: 'チャットへ送信',
+      sendToChatNewSession: '新しいチャット',
+      sendToChatEmpty: '会話はまだありません',
+      sendToChatLoading: '会話を読み込み中…',
+      sendToChatSend: '送信',
+      sendToChatSuccess: '論文をチャットに送信しました。',
+      sendToChatFailed: '論文のチャットへの送信に失敗しました。',
+      sendToChatPreview: 'メッセージプレビュー',
     },
-  
     latex: {
       documentsTitle: 'ドキュメント',
       newDocument: '新規作成',
@@ -476,6 +484,8 @@ export default {
       emptyDocuments: 'まだドキュメントがありません。新規作成して執筆を始めましょう。',
       deleteDocument: 'ドキュメントを削除',
     },
+  
+
 
     rag: {
       newCollection: 'ナレッジベースを新規作成',
@@ -912,6 +922,21 @@ export default {
 
   // チャット
   chat: {
+    vcp: {
+      renderToggle: 'VCPカード描画を切り替え',
+      aestheticToggle: 'カードの装飾スタイルを切り替え',
+      renderOn: 'VCPカード描画を有効にしました',
+      renderOff: 'VCPカード描画を無効にしました',
+      typeHtml: 'HTML',
+      typeSvg: 'SVG',
+      typeMermaid: 'Mermaid',
+      typeKatex: 'KaTeX',
+      collapse: 'カードを折りたたむ',
+      changeHeight: 'カードの高さを調整',
+      frameTitle: '{type}カードのプレビュー',
+      katexFailed: 'KaTeXで描画できず、代わりにソースを表示しています。',
+      mermaidFailed: 'Mermaidで描画できず、代わりにソースを表示しています。',
+    },
     contextRemaining: '残り',
     contextClickToEdit: 'クリックしてコンテキスト長を編集',
     contextEditTitle: 'コンテキスト長を編集',

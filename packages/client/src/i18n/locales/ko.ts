@@ -447,8 +447,16 @@ export default {
       backToList: '목록으로 돌아가기',
       previewFrame: 'PDF 미리보기',
       reload: '새로 고침',
+      sendToChat: '채팅으로 보내기',
+      sendToChatTitle: '채팅으로 보내기',
+      sendToChatNewSession: '새 채팅',
+      sendToChatEmpty: '아직 대화가 없습니다',
+      sendToChatLoading: '대화를 불러오는 중…',
+      sendToChatSend: '보내기',
+      sendToChatSuccess: '논문을 채팅으로 보냈습니다.',
+      sendToChatFailed: '논문을 채팅으로 보내지 못했습니다.',
+      sendToChatPreview: '메시지 미리보기',
     },
-  
     latex: {
       documentsTitle: '문서',
       newDocument: '새로 만들기',
@@ -476,6 +484,8 @@ export default {
       emptyDocuments: '아직 문서가 없습니다. 새로 만들어 작성을 시작하세요.',
       deleteDocument: '문서 삭제',
     },
+  
+
 
     rag: {
       newCollection: '새 지식 베이스',
@@ -912,6 +922,21 @@ export default {
 
   // 채팅
   chat: {
+    vcp: {
+      renderToggle: 'VCP 카드 렌더링 전환',
+      aestheticToggle: '카드 꾸미기 스타일 전환',
+      renderOn: 'VCP 카드 렌더링 켜짐',
+      renderOff: 'VCP 카드 렌더링 꺼짐',
+      typeHtml: 'HTML',
+      typeSvg: 'SVG',
+      typeMermaid: 'Mermaid',
+      typeKatex: 'KaTeX',
+      collapse: '카드 접기',
+      changeHeight: '카드 높이 조정',
+      frameTitle: '{type} 카드 미리보기',
+      katexFailed: 'KaTeX 렌더링에 실패하여 소스를 대신 표시합니다.',
+      mermaidFailed: 'Mermaid 렌더링에 실패하여 소스를 대신 표시합니다.',
+    },
     contextRemaining: '남음',
     contextClickToEdit: '클릭하여 컨텍스트 길이 편집',
     contextEditTitle: '컨텍스트 길이 편집',

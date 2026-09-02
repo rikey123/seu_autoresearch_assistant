@@ -20,6 +20,7 @@ import { useProfilesStore } from "@/stores/hermes/profiles";
 import { useFilesStore } from "@/stores/hermes/files";
 import { useToolPanelStore } from "@/stores/hermes/tool-panel";
 import { useSessionBrowserPrefsStore } from "@/stores/hermes/session-browser-prefs";
+import { useVcpPrefsStore } from "@/stores/hermes/vcp-prefs";
 import {
   NButton,
   NDrawer,
@@ -90,10 +91,20 @@ const profilesStore = useProfilesStore();
 const filesStore = useFilesStore();
 const toolPanelStore = useToolPanelStore();
 const sessionBrowserPrefsStore = useSessionBrowserPrefsStore();
+const vcpPrefsStore = useVcpPrefsStore();
 const router = useRouter();
 const message = useMessage();
 const { t } = useI18n();
 const isSuperAdmin = computed(() => isStoredSuperAdmin());
+
+// VCP card layer toggles (html/svg/mermaid/katex rendered as sandboxed cards).
+function toggleVcpRender() {
+  const enabled = vcpPrefsStore.toggleRenderEnabled();
+  message.info(t(enabled ? "chat.vcp.renderOn" : "chat.vcp.renderOff"));
+}
+function toggleVcpAesthetic() {
+  vcpPrefsStore.toggleAestheticEnabled();
+}
 
 const showOutline = ref(false);
 const showRealtimeVoice = ref(false);
@@ -2838,6 +2849,69 @@ async function handleSessionModelCustomSubmit() {
         <div class="header-actions">
           <!-- chat/live mode toggle hidden -->
           <template v-if="currentMode === 'chat'">
+            <NTooltip trigger="hover">
+              <template #trigger>
+                <NButton
+                  class="header-tool-toggle vcp-render-toggle"
+                  :class="{ active: vcpPrefsStore.renderEnabled }"
+                  quaternary
+                  size="small"
+                  :aria-pressed="vcpPrefsStore.renderEnabled"
+                  :aria-label="t('chat.vcp.renderToggle')"
+                  @click="toggleVcpRender"
+                  circle
+                >
+                  <template #icon>
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <rect x="3" y="4" width="18" height="14" rx="2" />
+                      <path d="M8 21h8" />
+                      <path d="m10 9 2.5 2.5L10 14" />
+                      <path d="M14 9h2" />
+                    </svg>
+                  </template>
+                </NButton>
+              </template>
+              {{ t("chat.vcp.renderToggle") }}
+            </NTooltip>
+            <NTooltip trigger="hover">
+              <template #trigger>
+                <NButton
+                  class="header-tool-toggle vcp-aesthetic-toggle"
+                  :class="{ active: vcpPrefsStore.aestheticEnabled }"
+                  quaternary
+                  size="small"
+                  :aria-pressed="vcpPrefsStore.aestheticEnabled"
+                  :aria-label="t('chat.vcp.aestheticToggle')"
+                  @click="toggleVcpAesthetic"
+                  circle
+                >
+                  <template #icon>
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M12 3l2.2 5.6L20 11l-5.8 2.4L12 19l-2.2-5.6L4 11l5.8-2.4z" />
+                    </svg>
+                  </template>
+                </NButton>
+              </template>
+              {{ t("chat.vcp.aestheticToggle") }}
+            </NTooltip>
             <NTooltip v-if="isSuperAdmin" trigger="hover">
               <template #trigger>
                 <NButton

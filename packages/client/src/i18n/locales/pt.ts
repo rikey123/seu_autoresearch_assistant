@@ -447,8 +447,16 @@ export default {
       backToList: 'Voltar para a lista',
       previewFrame: 'Pré-visualização do PDF',
       reload: 'Recarregar',
+      sendToChat: 'Enviar para o chat',
+      sendToChatTitle: 'Enviar para o chat',
+      sendToChatNewSession: 'Novo chat',
+      sendToChatEmpty: 'Ainda não há conversas',
+      sendToChatLoading: 'Carregando conversas…',
+      sendToChatSend: 'Enviar',
+      sendToChatSuccess: 'Artigo enviado para o chat.',
+      sendToChatFailed: 'Falha ao enviar o artigo para o chat.',
+      sendToChatPreview: 'Pré-visualização da mensagem',
     },
-  
     latex: {
       documentsTitle: 'Documentos',
       newDocument: 'Novo',
@@ -476,6 +484,8 @@ export default {
       emptyDocuments: 'Nenhum documento ainda. Crie um para começar a escrever.',
       deleteDocument: 'Excluir documento',
     },
+  
+
 
     rag: {
       newCollection: 'Nova base de conhecimento',
@@ -912,6 +922,21 @@ export default {
 
   // Chat
   chat: {
+    vcp: {
+      renderToggle: 'Alternar renderização de cartões VCP',
+      aestheticToggle: 'Alternar estética dos cartões',
+      renderOn: 'Renderização de cartões VCP ativada',
+      renderOff: 'Renderização de cartões VCP desativada',
+      typeHtml: 'HTML',
+      typeSvg: 'SVG',
+      typeMermaid: 'Mermaid',
+      typeKatex: 'KaTeX',
+      collapse: 'Recolher cartão',
+      changeHeight: 'Ajustar altura do cartão',
+      frameTitle: 'Pré-visualização do cartão {type}',
+      katexFailed: 'O KaTeX não conseguiu renderizar este bloco; o código-fonte é exibido no lugar.',
+      mermaidFailed: 'O Mermaid não conseguiu renderizar este diagrama; o código-fonte é exibido no lugar.',
+    },
     contextRemaining: 'restante',
     contextClickToEdit: 'Clique para editar o tamanho do contexto',
     contextEditTitle: 'Editar tamanho do contexto',

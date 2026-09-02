@@ -272,6 +272,41 @@ const RESEARCH_LATEX_LOCALIZED_KEYS = [
   'research.latex.deleteDocument',
 ]
 
+// VCP card layer + paper send-to-chat copy (keys referenced dynamically are
+// also listed here so every locale must define them).
+const VCP_LOCALIZED_KEYS = [
+  'chat.vcp.renderToggle',
+  'chat.vcp.aestheticToggle',
+  'chat.vcp.renderOn',
+  'chat.vcp.renderOff',
+  'chat.vcp.typeHtml',
+  'chat.vcp.typeSvg',
+  'chat.vcp.typeMermaid',
+  'chat.vcp.typeKatex',
+  'chat.vcp.collapse',
+  'chat.vcp.changeHeight',
+  'chat.vcp.frameTitle',
+  'chat.vcp.katexFailed',
+  'chat.vcp.mermaidFailed',
+  'research.papers.sendToChat',
+  'research.papers.sendToChatTitle',
+  'research.papers.sendToChatNewSession',
+  'research.papers.sendToChatEmpty',
+  'research.papers.sendToChatLoading',
+  'research.papers.sendToChatSend',
+  'research.papers.sendToChatSuccess',
+  'research.papers.sendToChatFailed',
+  'research.papers.sendToChatPreview',
+]
+
+// Proper nouns and locale-neutral type labels are expected to match English.
+const VCP_TYPE_NEUTRAL_KEYS = new Set([
+  'chat.vcp.typeHtml',
+  'chat.vcp.typeSvg',
+  'chat.vcp.typeMermaid',
+  'chat.vcp.typeKatex',
+])
+
 const PLATFORM_SETTINGS_LOCALE_SPECIFIC_LOCALIZED_KEYS: Record<string, string[]> = {
   de: ['platform.qqAppId', 'platform.qqAppSecret'],
   ja: ['platform.homeserver', 'platform.accountId'],
@@ -625,6 +660,43 @@ describe('i18n locale coverage', () => {
     })
 
     expect(untranslated).toEqual([])
+  })
+
+  it('defines VCP card and paper send-to-chat copy in every raw locale', () => {
+    const missing = Object.entries(rawMessages).flatMap(([locale, localeMessages]) =>
+      VCP_LOCALIZED_KEYS
+        .filter(key => !hasPath(localeMessages, key))
+        .map(key => `${locale}: ${key}`),
+    )
+
+    expect(missing).toEqual([])
+  })
+
+  it('localizes VCP card and paper send-to-chat copy in every raw non-English locale instead of copying English', () => {
+    const untranslated = Object.entries(rawMessages).flatMap(([locale, localeMessages]) => {
+      if (locale === 'en') return []
+
+      return VCP_LOCALIZED_KEYS.flatMap((key) => {
+        if (VCP_TYPE_NEUTRAL_KEYS.has(key)) return []
+        const localeValue = getPath(localeMessages, key)
+        if (typeof localeValue !== 'string' || !localeValue.trim()) return [`${locale}: ${key} missing`]
+        return localeValue === getPath(en, key) ? [`${locale}: ${key} copies English`] : []
+      })
+    })
+
+    expect(untranslated).toEqual([])
+  })
+
+  it('keeps the {type} interpolation for the VCP frame title in every locale', () => {
+    const mismatches = Object.entries(rawMessages).flatMap(([locale, localeMessages]) => {
+      const value = getPath(localeMessages, 'chat.vcp.frameTitle')
+      if (typeof value !== 'string') return [`${locale}: chat.vcp.frameTitle missing`]
+      return interpolationNames(value).join(',') === 'type'
+        ? []
+        : [`${locale}: chat.vcp.frameTitle placeholder mismatch`]
+    })
+
+    expect(mismatches).toEqual([])
   })
 
   it('uses localized line labels with a {line} placeholder for Research LaTeX in every locale', () => {

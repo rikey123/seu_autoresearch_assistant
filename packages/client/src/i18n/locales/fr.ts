@@ -447,8 +447,16 @@ export default {
       backToList: 'Retour à la liste',
       previewFrame: 'Aperçu du PDF',
       reload: 'Recharger',
+      sendToChat: 'Envoyer vers la discussion',
+      sendToChatTitle: 'Envoyer vers la discussion',
+      sendToChatNewSession: 'Nouvelle discussion',
+      sendToChatEmpty: 'Aucune conversation pour le moment',
+      sendToChatLoading: 'Chargement des conversations…',
+      sendToChatSend: 'Envoyer',
+      sendToChatSuccess: 'Article envoyé vers la discussion.',
+      sendToChatFailed: 'Échec de l\'envoi de l\'article vers la discussion.',
+      sendToChatPreview: 'Aperçu du message',
     },
-  
     latex: {
       documentsTitle: 'Documents LaTeX',
       newDocument: 'Nouveau',
@@ -476,6 +484,8 @@ export default {
       emptyDocuments: 'Aucun document pour l’instant. Créez-en un pour commencer à écrire.',
       deleteDocument: 'Supprimer le document',
     },
+  
+
 
     rag: {
       newCollection: 'Nouvelle base de connaissances',
@@ -912,6 +922,21 @@ export default {
 
   // Chat
   chat: {
+    vcp: {
+      renderToggle: 'Basculer le rendu des cartes VCP',
+      aestheticToggle: 'Basculer le style esthétique des cartes',
+      renderOn: 'Rendu des cartes VCP activé',
+      renderOff: 'Rendu des cartes VCP désactivé',
+      typeHtml: 'HTML',
+      typeSvg: 'SVG',
+      typeMermaid: 'Mermaid',
+      typeKatex: 'KaTeX',
+      collapse: 'Réduire la carte',
+      changeHeight: 'Ajuster la hauteur de la carte',
+      frameTitle: 'Aperçu de la carte {type}',
+      katexFailed: 'KaTeX n\'a pas pu rendre ce bloc ; la source est affichée à la place.',
+      mermaidFailed: 'Mermaid n\'a pas pu rendre ce diagramme ; la source est affichée à la place.',
+    },
     contextRemaining: 'restant',
     contextClickToEdit: 'Cliquez pour modifier la longueur du contexte',
     contextEditTitle: 'Modifier la longueur du contexte',

@@ -435,8 +435,16 @@ export default {
       backToList: '返回文獻列表',
       previewFrame: 'PDF 預覽',
       reload: '重新載入',
+      sendToChat: '傳送到聊天',
+      sendToChatTitle: '傳送到聊天',
+      sendToChatNewSession: '新建聊天',
+      sendToChatEmpty: '尚無會話',
+      sendToChatLoading: '正在載入會話…',
+      sendToChatSend: '傳送',
+      sendToChatSuccess: '論文已傳送到聊天。',
+      sendToChatFailed: '傳送論文到聊天失敗。',
+      sendToChatPreview: '訊息預覽',
     },
-  
     latex: {
       documentsTitle: '文件',
       newDocument: '新增',
@@ -464,6 +472,8 @@ export default {
       emptyDocuments: '還沒有文件。建立一個開始撰寫。',
       deleteDocument: '刪除文件',
     },
+  
+
 
     rag: {
       newCollection: '新增知識庫',
@@ -926,6 +936,21 @@ export default {
 
   // 對話
   chat: {
+    vcp: {
+      renderToggle: '切換 VCP 卡片渲染',
+      aestheticToggle: '切換卡片美化樣式',
+      renderOn: '已開啟 VCP 卡片渲染',
+      renderOff: '已關閉 VCP 卡片渲染',
+      typeHtml: 'HTML',
+      typeSvg: 'SVG',
+      typeMermaid: 'Mermaid',
+      typeKatex: 'KaTeX',
+      collapse: '摺疊卡片',
+      changeHeight: '調整卡片高度',
+      frameTitle: '{type} 卡片預覽',
+      katexFailed: 'KaTeX 渲染失敗，已回退為原始碼顯示。',
+      mermaidFailed: 'Mermaid 渲染失敗，已回退為原始碼顯示。',
+    },
     contextRemaining: '剩餘',
     contextClickToEdit: '點擊編輯上下文長度',
     contextEditTitle: '編輯上下文長度',

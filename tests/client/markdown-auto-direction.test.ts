@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'fs'
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { config, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { createPinia } from 'pinia'
 
 vi.mock('mermaid', () => ({
   default: {
@@ -90,3 +91,7 @@ describe('user text elsewhere in the chat', () => {
     expect(source).toContain('<span class="session-item-title" dir="auto">')
   })
 })
+
+// MarkdownRenderer reads the VCP prefs store from the app pinia; register
+// a default instance so these component tests mount without local setup.
+config.global.plugins = [createPinia()]

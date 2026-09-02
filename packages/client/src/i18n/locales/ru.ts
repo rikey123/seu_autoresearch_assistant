@@ -357,8 +357,16 @@ export default {
       backToList: 'Вернуться к списку',
       previewFrame: 'Предпросмотр PDF',
       reload: 'Обновить',
+      sendToChat: 'Отправить в чат',
+      sendToChatTitle: 'Отправить в чат',
+      sendToChatNewSession: 'Новый чат',
+      sendToChatEmpty: 'Пока нет бесед',
+      sendToChatLoading: 'Загрузка бесед…',
+      sendToChatSend: 'Отправить',
+      sendToChatSuccess: 'Статья отправлена в чат.',
+      sendToChatFailed: 'Не удалось отправить статью в чат.',
+      sendToChatPreview: 'Предпросмотр сообщения',
     },
-  
     latex: {
       documentsTitle: 'Документы',
       newDocument: 'Создать',
@@ -386,6 +394,8 @@ export default {
       emptyDocuments: 'Документов пока нет. Создайте документ и начните писать.',
       deleteDocument: 'Удалить документ',
     },
+  
+
 
     rag: {
       newCollection: 'Новая база знаний',
@@ -827,6 +837,21 @@ export default {
 
 
   chat: {
+    vcp: {
+      renderToggle: 'Переключить отрисовку карточек VCP',
+      aestheticToggle: 'Переключить эстетику карточек',
+      renderOn: 'Отрисовка карточек VCP включена',
+      renderOff: 'Отрисовка карточек VCP выключена',
+      typeHtml: 'HTML',
+      typeSvg: 'SVG',
+      typeMermaid: 'Mermaid',
+      typeKatex: 'KaTeX',
+      collapse: 'Свернуть карточку',
+      changeHeight: 'Изменить высоту карточки',
+      frameTitle: 'Предпросмотр карточки {type}',
+      katexFailed: 'KaTeX не смог отрисовать этот блок; показан исходный код.',
+      mermaidFailed: 'Mermaid не смог отрисовать эту диаграмму; показан исходный код.',
+    },
     contextRemaining: 'Осталось',
     contextClickToEdit: 'Нажмите, чтобы изменить размер контекста',
     contextEditTitle: 'Изменить размер контекста',
