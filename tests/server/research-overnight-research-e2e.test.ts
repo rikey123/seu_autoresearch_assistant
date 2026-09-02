@@ -6,10 +6,11 @@ import { join } from 'node:path'
 // Template-level end-to-end run for the overnight-research template: the
 // template is instantiated as a Studio workflow and executed through the REAL
 // WorkflowManager scheduler. Only the agent/chat layer is mocked (deterministic
-// canned JSONL output for the batch executor); the queue intake, batch
-// aggregation, and morning report script nodes run through the real
-// deterministic executor (real `node -e` subprocesses, real stdin/stdout
-// plumbing, real morning-report.html written to disk).
+// canned JSONL output for the batch executor, canned suggestion lines for the
+// next-steps agent); the queue intake, batch aggregation, and morning report
+// script nodes run through the real deterministic executor (real `node -e`
+// subprocesses, real stdin/stdout plumbing, real morning-report.html written
+// to disk).
 const originalE2eDbDir = process.env.HERMES_WEB_UI_TEST_DB_DIR
 const originalE2eWebUiHome = process.env.HERMES_WEB_UI_HOME
 const originalE2eStateDir = process.env.HERMES_WEBUI_STATE_DIR
@@ -91,6 +92,15 @@ const BATCH_EXECUTOR_OUTPUT = [
   JSON.stringify({ id: 'q-005', status: 'success', summary: 'GPT-3 缩放要点摘要' }),
 ].join('\n')
 
+// Canned agent output for the next-steps node: the one-JSON-line-per-
+// suggestion contract (3 suggestions). The empty-suggestions scenario swaps
+// this for whitespace-only output to exercise the placeholder fallback.
+const NEXT_STEPS_OUTPUT = [
+  JSON.stringify({ suggestion: '重试 q-004：补齐训练数据后单独重跑批次 2' }),
+  JSON.stringify({ suggestion: '补跑缺失的 q-005 并核对产物落盘' }),
+  JSON.stringify({ suggestion: '把本轮成功摘要的汇总排入下一轮队列自动执行' }),
+].join('\n')
+
 // Queue fixture: 9 physical lines — 5 valid unique items, 1 duplicate id, one
 // non-JSON line, one item without id, and one blank line (plus the trailing
 // newline every text file ends with).
@@ -128,17 +138,25 @@ beforeAll(async () => {
   initAllStores()
 })
 
+let nextStepsAgentOutput = NEXT_STEPS_OUTPUT
+
 beforeEach(() => {
   chatRunMock.runAndWait.mockReset()
   chatRunMock.abortSession.mockReset()
   chatRunMock.sessionOutputs.clear()
   sessionStoreMock.createSession.mockClear()
+  nextStepsAgentOutput = NEXT_STEPS_OUTPUT
   chatRunMock.runAndWait.mockImplementation(async (input: { session_id: string; input: string }) => {
-    if (!String(input.input).includes('过夜批处理执行助手')) {
-      throw new Error(`unexpected agent node input: ${String(input.input).slice(0, 160)}`)
+    const prompt = String(input.input)
+    if (prompt.includes('过夜批处理执行助手')) {
+      chatRunMock.sessionOutputs.set(input.session_id, BATCH_EXECUTOR_OUTPUT)
+      return { ok: true, output: BATCH_EXECUTOR_OUTPUT }
     }
-    chatRunMock.sessionOutputs.set(input.session_id, BATCH_EXECUTOR_OUTPUT)
-    return { ok: true, output: BATCH_EXECUTOR_OUTPUT }
+    if (prompt.includes('下一步建议助手')) {
+      chatRunMock.sessionOutputs.set(input.session_id, nextStepsAgentOutput)
+      return { ok: true, output: nextStepsAgentOutput }
+    }
+    throw new Error(`unexpected agent node input: ${prompt.slice(0, 160)}`)
   })
 })
 
@@ -152,7 +170,7 @@ afterAll(async () => {
 })
 
 describe('overnight-research template end-to-end run (real engine)', () => {
-  it('consumes the JSONL queue and lands a morning report HTML on disk', async () => {
+  it('consumes the JSONL queue and lands a morning report HTML with auto next-step suggestions on disk', async () => {
     const { manager, workflowStore } = await importE2eModules()
     const template = getResearchWorkflowTemplate('overnight-research')!
 
@@ -177,26 +195,40 @@ describe('overnight-research template end-to-end run (real engine)', () => {
     const instance = new manager.WorkflowManager()
     const result = await instance.runNow(workflow.id)
 
-    // The full pipeline (3 real script subprocesses + 1 mocked agent node)
-    // completed, including the diamond join at or-batch-aggregate.
+    // The full pipeline (3 real script subprocesses + 2 mocked agent nodes)
+    // completed, including the diamond join at or-batch-aggregate and the
+    // suggestion agent between the join and the report.
     expect(result.run.status).toBe('completed')
     expect(result.run.error).toBeNull()
     for (const nodeId of template.nodes.map(node => node.id)) {
       expect(nodeRow(result, nodeId).status, nodeId).toBe('completed')
     }
 
-    // Only or-batch-executor is an agent node; script nodes never create chat
-    // sessions.
-    expect(chatRunMock.runAndWait).toHaveBeenCalledTimes(1)
-    expect(sessionStoreMock.createSession).toHaveBeenCalledTimes(1)
-    const executorCall = chatRunMock.runAndWait.mock.calls[0][0]
-    expect(String(executorCall.input)).toContain('[Current task]')
-    expect(String(executorCall.input)).toContain('过夜批处理执行助手')
+    // Exactly the two agent nodes (or-batch-executor, or-next-steps) create
+    // chat sessions; script nodes never do.
+    expect(chatRunMock.runAndWait).toHaveBeenCalledTimes(2)
+    expect(sessionStoreMock.createSession).toHaveBeenCalledTimes(2)
+    const executorCall = chatRunMock.runAndWait.mock.calls
+      .map(call => call[0])
+      .find(call => String(call.input).includes('过夜批处理执行助手'))
+    expect(executorCall, 'batch executor agent call').toBeTruthy()
+    expect(String(executorCall!.input)).toContain('[Current task]')
+    expect(String(executorCall!.input)).toContain('过夜批处理执行助手')
     // The queue plan reached the agent through the intake edge.
-    expect(String(executorCall.input)).toContain('[Upstream: 队列接入]')
-    expect(String(executorCall.input)).toContain('"batchSize":2')
+    expect(String(executorCall!.input)).toContain('[Upstream: 队列接入]')
+    expect(String(executorCall!.input)).toContain('"batchSize":2')
     const executorRow = nodeRow(result, 'or-batch-executor')
     expect(executorRow.session_id).not.toBe('')
+
+    // The suggestion agent received the aggregation ledger through the
+    // aggregate -> next-steps edge.
+    const nextStepsCall = chatRunMock.runAndWait.mock.calls
+      .map(call => call[0])
+      .find(call => String(call.input).includes('下一步建议助手'))
+    expect(nextStepsCall, 'next-steps agent call').toBeTruthy()
+    expect(String(nextStepsCall!.input)).toContain('[Upstream: 逐批聚合]')
+    expect(String(nextStepsCall!.input)).toContain('"completionRate":80')
+    expect(nodeRow(result, 'or-next-steps').session_id).not.toBe('')
 
     // Intake validated/deduped/batched the queue through a real subprocess.
     const plan = parseNodeOutput(nodeRow(result, 'or-queue-intake'))
@@ -218,12 +250,13 @@ describe('overnight-research template end-to-end run (real engine)', () => {
 
     // The morning report landed on disk next to the queue file and carries the
     // batch statistics, every per-item result, the failure reasons, and the
-    // next-step placeholder — with no engine wrapper line leaking in.
+    // auto next-step suggestions — with no engine wrapper line leaking in.
     const report = parseNodeOutput(nodeRow(result, 'or-morning-report'))
     expect(report).toMatchObject({
       format: 'html',
       title: '过夜自主科研晨报',
       stats: { total: 5, success: 4, failed: 1, missing: 0, completionRate: 80 },
+      nextSteps: { source: 'agent', count: 3 },
     })
     const reportPath = String(report.reportPath)
     expect(reportPath).toBe(join(orRunDir, 'morning-report.html'))
@@ -242,10 +275,66 @@ describe('overnight-research template end-to-end run (real engine)', () => {
     expect(html).toContain('<h2>三、失败项与原因</h2>')
     expect(html).toContain('训练数据缺失')
     expect(html).toContain('<h2>四、下一步建议</h2>')
-    expect(html).toContain('（占位）')
+    expect(html).toContain('以下建议由「下一步建议」节点基于聚合台账自动生成')
+    for (const suggestion of [
+      '重试 q-004：补齐训练数据后单独重跑批次 2',
+      '补跑缺失的 q-005 并核对产物落盘',
+      '把本轮成功摘要的汇总排入下一轮队列自动执行',
+    ]) {
+      expect(html).toContain('<li>' + suggestion + '</li>')
+    }
+    expect(html).not.toContain('（占位）')
+    expect(html).not.toContain('自动建议生成失败')
     expect(html).not.toContain('[Workflow upstream results]')
     expect(html).not.toContain('[Upstream:')
     expect(html).not.toContain('[Current task]')
     expect(html).not.toContain('Execute the current workflow node.')
+  }, 60000)
+
+  it('falls back to the placeholder with a failure marker when the suggestion agent output is empty, without failing the run', async () => {
+    const { manager, workflowStore } = await importE2eModules()
+    const template = getResearchWorkflowTemplate('overnight-research')!
+
+    const emptyRunDir = join(e2eTestRoot, 'or-run-empty-suggestions')
+    mkdirSync(emptyRunDir, { recursive: true })
+    const queuePath = join(emptyRunDir, 'queue.jsonl')
+    writeFileSync(queuePath, QUEUE_LINES.join('\n') + '\n', 'utf8')
+
+    const nodes = template.nodes.map(node => node.id === 'or-queue-intake'
+      ? { ...node, data: { ...node.data, input: JSON.stringify({ queuePath, batchSize: 2 }) } }
+      : node)
+    const workflow = workflowStore.createWorkflow({
+      name: 'e2e overnight research (empty suggestions)',
+      profile: template.profile,
+      nodes,
+      edges: template.edges,
+    })
+
+    // Whitespace-only suggestion output: the agent node itself completes, the
+    // report finds no parseable suggestion and degrades to the legacy
+    // placeholder text with an explicit failure marker.
+    nextStepsAgentOutput = '   \n  '
+
+    const instance = new manager.WorkflowManager()
+    const result = await instance.runNow(workflow.id)
+
+    expect(result.run.status).toBe('completed')
+    expect(result.run.error).toBeNull()
+    for (const nodeId of template.nodes.map(node => node.id)) {
+      expect(nodeRow(result, nodeId).status, nodeId).toBe('completed')
+    }
+
+    const report = parseNodeOutput(nodeRow(result, 'or-morning-report'))
+    expect(report).toMatchObject({
+      format: 'html',
+      title: '过夜自主科研晨报',
+      stats: { total: 5, success: 4, failed: 1, missing: 0, completionRate: 80 },
+      nextSteps: { source: 'placeholder', count: 0 },
+    })
+    const html = readFileSync(String(report.reportPath), 'utf8')
+    expect(html).toContain('<h2>四、下一步建议</h2>')
+    expect(html).toContain('（占位）')
+    expect(html).toContain('自动建议生成失败')
+    expect(html).not.toContain('<li>')
   }, 60000)
 })

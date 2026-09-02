@@ -226,18 +226,33 @@ describe('overnight-research batch aggregation (or-batch-aggregate)', () => {
   })
 })
 
+// Canned or-next-steps agent output: the one-JSON-line-per-suggestion contract
+// the node prompt demands (3 suggestions covering remediation, missing-item
+// recovery, and an automatable follow-up).
+const AGENT_SUGGESTIONS = [
+  JSON.stringify({ suggestion: '重试 q-004：补齐训练数据后单独重跑批次 2' }),
+  JSON.stringify({ suggestion: '补跑缺失的 q-005 并核对产物落盘' }),
+  JSON.stringify({ suggestion: '把本轮成功摘要的汇总排入下一轮队列自动执行' }),
+].join('\n')
+
+function reportStdin(ledger: Record<string, unknown>, suggestions: string): string {
+  return wrapUpstreams([
+    { title: '逐批聚合', content: JSON.stringify(ledger) },
+    { title: '下一步建议', content: suggestions },
+  ])
+}
+
 describe('overnight-research morning report (or-morning-report)', () => {
-  it('writes the morning report HTML with stats, per-item results, failures, and the next-step placeholder', () => {
+  it('writes the morning report HTML with stats, per-item results, failures, and auto next-step suggestions', () => {
     const plan = runIntake(2)
     const ledger = expectSuccess('or-batch-aggregate', aggregateStdin(plan, FULL_RESULTS))
-    const report = expectSuccess('or-morning-report', wrapUpstreams([
-      { title: '逐批聚合', content: JSON.stringify(ledger) },
-    ]))
+    const report = expectSuccess('or-morning-report', reportStdin(ledger, AGENT_SUGGESTIONS))
 
     expect(report).toMatchObject({
       format: 'html',
       title: '过夜自主科研晨报',
       stats: { total: 5, success: 4, failed: 1, missing: 0, completionRate: 80 },
+      nextSteps: { source: 'agent', count: 3 },
     })
     const reportPath = String(report.reportPath)
     expect(reportPath).toBe(join(testRoot, 'morning-report.html'))
@@ -250,7 +265,17 @@ describe('overnight-research morning report (or-morning-report)', () => {
     expect(html).toContain('<h2>二、逐项结果清单</h2>')
     expect(html).toContain('<h2>三、失败项与原因</h2>')
     expect(html).toContain('<h2>四、下一步建议</h2>')
-    expect(html).toContain('（占位）')
+    expect(html).toContain('以下建议由「下一步建议」节点基于聚合台账自动生成')
+    // Every auto suggestion lands as one list line in section 4.
+    for (const suggestion of [
+      '重试 q-004：补齐训练数据后单独重跑批次 2',
+      '补跑缺失的 q-005 并核对产物落盘',
+      '把本轮成功摘要的汇总排入下一轮队列自动执行',
+    ]) {
+      expect(html).toContain('<li>' + suggestion + '</li>')
+    }
+    expect(html).not.toContain('（占位）')
+    expect(html).not.toContain('自动建议生成失败')
     // Key batch statistics.
     expect(html).toContain('<td>80%</td>')
     expect(html).toContain('重复剔除的条目 id：q-002')
@@ -268,6 +293,46 @@ describe('overnight-research morning report (or-morning-report)', () => {
     expect(html).not.toContain('Execute the current workflow node.')
   })
 
+  it('parses suggestions tolerantly (fenced JSON, bullets, and numbered markdown lines)', () => {
+    const plan = runIntake(2)
+    const ledger = expectSuccess('or-batch-aggregate', aggregateStdin(plan, FULL_RESULTS))
+    const messy = [
+      '```json',
+      '- {"suggestion": "围栏内 bullet JSON 建议一"}',
+      '```',
+      '2. {"suggestion": "编号 JSON 建议二"}',
+      '- 重试 q-004：纯 bullet 行也接受',
+      '1、先修复训练数据缺失的环境再整批重放',
+    ].join('\n')
+    const report = expectSuccess('or-morning-report', reportStdin(ledger, messy))
+    expect(report.nextSteps).toEqual({ source: 'agent', count: 4 })
+    const html = readFileSync(String(report.reportPath), 'utf8')
+    for (const suggestion of [
+      '围栏内 bullet JSON 建议一',
+      '编号 JSON 建议二',
+      '重试 q-004：纯 bullet 行也接受',
+      '先修复训练数据缺失的环境再整批重放',
+    ]) {
+      expect(html).toContain('<li>' + suggestion + '</li>')
+    }
+  })
+
+  it('falls back to the placeholder with a failure marker on empty or unparseable suggestions, without failing the node', () => {
+    const plan = runIntake(2)
+    const ledger = expectSuccess('or-batch-aggregate', aggregateStdin(plan, FULL_RESULTS))
+    // Empty output, whitespace-only output, and bare model chatter (no JSON
+    // shape, no list marker) all take the same non-fatal fallback path.
+    for (const suggestions of ['', '   \n  ', '抱歉，本轮无法生成建议。']) {
+      const report = expectSuccess('or-morning-report', reportStdin(ledger, suggestions))
+      expect(report.nextSteps).toEqual({ source: 'placeholder', count: 0 })
+      const html = readFileSync(String(report.reportPath), 'utf8')
+      expect(html).toContain('<h2>四、下一步建议</h2>')
+      expect(html).toContain('（占位）')
+      expect(html).toContain('自动建议生成失败')
+      expect(html).not.toContain('<li>')
+    }
+  })
+
   it('renders the no-failure variant and rejects non-ledger input', () => {
     const plan = runIntake(2)
     const successOnly = FULL_RESULTS.split('\n')
@@ -277,9 +342,7 @@ describe('overnight-research morning report (or-morning-report)', () => {
       .join('\n')
     const ledger = expectSuccess('or-batch-aggregate', aggregateStdin(plan, successOnly))
     expect(ledger.stats).toEqual({ total: 5, success: 5, failed: 0, missing: 0, completionRate: 100 })
-    const report = expectSuccess('or-morning-report', wrapUpstreams([
-      { title: '逐批聚合', content: JSON.stringify(ledger) },
-    ]))
+    const report = expectSuccess('or-morning-report', reportStdin(ledger, AGENT_SUGGESTIONS))
     const html = readFileSync(String(report.reportPath), 'utf8')
     expect(html).toContain('本次运行无失败项。')
 

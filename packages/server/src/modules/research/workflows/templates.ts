@@ -545,22 +545,105 @@ process.stdin.on('end', function () {
   }));
 });`
 
-// Morning report: consumes the aggregation ledger JSON and renders the ARIS
-// morning report HTML (batch statistics, per-item results, failures with
-// reasons, next-step placeholder) next to the queue file.
+// Morning report: consumes the aggregation ledger JSON plus the or-next-steps
+// agent output (both arrive as "[Upstream: ...]" sections of one wrapped
+// message, so the section headers are the delimiters — wrapper lines must NOT
+// be stripped before splitting) and renders the ARIS morning report HTML
+// (batch statistics, per-item results, failures with reasons, auto next-step
+// suggestions) next to the queue file. The suggestions output is parsed
+// tolerantly (one JSON line per suggestion is the contract; fenced blocks,
+// bullets, and numbered markdown list items also parse). An empty or
+// unparseable suggestions section is non-fatal: section 4 falls back to the
+// legacy placeholder text with an explicit "自动建议生成失败" marker and the
+// node still exits 0, so the run always lands its morning report.
 const OR_MORNING_REPORT_CODE = String.raw`'use strict';
-${ENGINE_WRAPPER_HELPERS}var rawInput = '';
+${ENGINE_WRAPPER_HELPERS}function splitUpstreamSections(text) {
+  var sections = [];
+  var current = null;
+  var lines = text.split(/\r?\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var header = line.match(/^\[Upstream: (.*?)\]\s*$/);
+    if (header) {
+      current = { title: header[1], lines: [] };
+      sections.push(current);
+      continue;
+    }
+    var trimmed = line.trim();
+    if (trimmed === '[Workflow upstream results]') continue;
+    if (trimmed === '[Current task]') break;
+    if (current) current.lines.push(line);
+  }
+  return sections;
+}
+function parseSuggestionLine(rawLine) {
+  var line = String(rawLine).trim();
+  if (!line) return null;
+  var fence = String.fromCharCode(96, 96, 96);
+  if (line.indexOf(fence) === 0) return null;
+  if (line.charAt(0) === '#') return null;
+  if (line === '[Workflow upstream results]' || line === '[Current task]') return null;
+  if (line.indexOf('[Upstream:') === 0 && line.slice(-1) === ']') return null;
+  var hadListMarker = false;
+  if (line.charAt(0) === '-' || line.charAt(0) === '*' || line.charAt(0) === '\u2022') {
+    hadListMarker = true;
+    line = line.slice(1).trim();
+  }
+  var numbered = line.match(/^\d+\s*[.)、:：]\s*/);
+  if (numbered) {
+    hadListMarker = true;
+    line = line.slice(numbered[0].length).trim();
+  }
+  if (!line) return null;
+  var parsed = null;
+  try { parsed = JSON.parse(line); } catch (error) {}
+  if (typeof parsed === 'string' && parsed.trim()) return parsed.trim();
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    var keys = ['suggestion', 'action', 'text', 'title', 'summary', 'recommendation', 'content'];
+    for (var k = 0; k < keys.length; k++) {
+      if (typeof parsed[keys[k]] === 'string' && parsed[keys[k]].trim()) return parsed[keys[k]].trim();
+    }
+    return null;
+  }
+  // Bare prose without any list marker or JSON shape is model chatter, not a
+  // suggestion — dropping it is what makes the empty-parse fallback below
+  // meaningful.
+  return hadListMarker ? line : null;
+}
+var rawInput = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', function (chunk) { rawInput += chunk; });
 process.stdin.on('end', function () {
   var fs = require('node:fs');
   var path = require('node:path');
-  var source = stripEngineWrapperLines(rawInput);
-  var ledger = source ? parseJsonPayload(source) : null;
+  var sections = splitUpstreamSections(rawInput);
+  var ledger = null;
+  var suggestionTexts = [];
+  for (var s = 0; s < sections.length; s++) {
+    var sectionText = sections[s].lines.join('\n').trim();
+    if (!sectionText) continue;
+    if (!ledger) {
+      var candidate = parseJsonPayload(sectionText);
+      if (candidate && candidate.queue && typeof candidate.queue.queuePath === 'string'
+        && candidate.stats && Array.isArray(candidate.items)) {
+        ledger = candidate;
+        continue;
+      }
+    }
+    suggestionTexts.push(sectionText);
+  }
   if (!ledger || !ledger.queue || typeof ledger.queue.queuePath !== 'string'
     || !ledger.stats || !Array.isArray(ledger.items)) {
     console.error('morning report node expects the aggregation ledger JSON from its upstream');
     process.exit(1);
+  }
+  var suggestions = [];
+  for (var t = 0; t < suggestionTexts.length; t++) {
+    var suggestionLines = suggestionTexts[t].split(/\r?\n/);
+    for (var l = 0; l < suggestionLines.length; l++) {
+      var suggestion = parseSuggestionLine(suggestionLines[l]);
+      if (suggestion) suggestions.push(suggestion);
+    }
   }
   function escapeHtml(text) {
     return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -631,7 +714,17 @@ process.stdin.on('end', function () {
     html.push('</tbody></table>');
   }
   html.push('<h2>四、下一步建议</h2>');
-  html.push('<p>（占位）下一步建议将由后续版本自动生成：基于失败项与缺失项给出重试/补充实验建议，并汇总需人工复核的事项。</p>');
+  if (suggestions.length) {
+    html.push('<p>以下建议由「下一步建议」节点基于聚合台账自动生成：</p>');
+    html.push('<ol>');
+    for (var g = 0; g < suggestions.length; g++) {
+      html.push('<li>' + escapeHtml(suggestions[g]) + '</li>');
+    }
+    html.push('</ol>');
+  } else {
+    html.push('<p>（占位）下一步建议将由后续版本自动生成：基于失败项与缺失项给出重试/补充实验建议，并汇总需人工复核的事项。</p>');
+    html.push('<p><strong>自动建议生成失败</strong>：建议节点输出为空或无法解析，本节已回退为占位文案；请查看运行详情中「下一步建议」节点的输出。</p>');
+  }
   var unexpected = Array.isArray(ledger.unexpected) ? ledger.unexpected : [];
   if (unexpected.length) {
     html.push('<p>计划外结果：' + escapeHtml(unexpected.map(function (row) { return row.id; }).join(', ')) + '</p>');
@@ -646,6 +739,7 @@ process.stdin.on('end', function () {
     reportPath: reportPath,
     bytes: Buffer.byteLength(document),
     stats: stats,
+    nextSteps: { source: suggestions.length ? 'agent' : 'placeholder', count: suggestions.length },
   }));
 });`
 
@@ -1066,16 +1160,22 @@ const paperTranslate: ResearchWorkflowTemplate = {
 // ARIS-style overnight batch research (DESIGN.md §3): a JSONL task queue is
 // validated/deduped/chunked deterministically, a single agent node executes the
 // planned batches (the engine delegates to the configured chat runtime), a
-// script node joins the plan with the agent output into an audited ledger, and
-// a final script node renders the morning report HTML. The diamond edge
-// (intake -> aggregate) is what lets the aggregation node reconcile the plan
-// against the agent output deterministically.
+// script node joins the plan with the agent output into an audited ledger, an
+// agent node turns that ledger into actionable next-step suggestions, and a
+// final script node renders the morning report HTML. The two diamond edges are
+// deterministic by construction: intake -> aggregate lets the aggregation node
+// reconcile the plan against the agent output, and aggregate -> report lets the
+// morning report see the audited ledger and the suggestion output as separate
+// "[Upstream: ...]" sections (agent nodes rewrite their input, so the ledger
+// must reach the report without passing through the suggestion agent). The
+// suggestions stage degrades gracefully (placeholder + failure marker in
+// report section 4) when its agent output is empty or unparseable.
 const overnightResearch: ResearchWorkflowTemplate = {
   id: 'overnight-research',
   name: '过夜自主科研',
-  description: 'ARIS 式批处理工作流：JSONL 任务队列接入（校验/去重/分批）→ agent 逐批执行 → 确定性逐批聚合与进度统计 → 晨报 HTML 产物。',
+  description: 'ARIS 式批处理工作流：JSONL 任务队列接入（校验/去重/分批）→ agent 逐批执行 → 确定性逐批聚合与进度统计 → agent 生成下一步建议（失败时晨报回退占位）→ 晨报 HTML 产物。',
   profile: 'default',
-  steps: ['队列接入', '批处理执行', '逐批聚合', '晨报报告'],
+  steps: ['队列接入', '批处理执行', '逐批聚合', '下一步建议', '晨报报告'],
   nodes: [
     scriptTemplateNode({
       id: 'or-queue-intake',
@@ -1105,10 +1205,26 @@ const overnightResearch: ResearchWorkflowTemplate = {
       position: nodePosition(2),
       code: OR_BATCH_AGGREGATE_CODE,
     }),
+    agentTemplateNode({
+      id: 'or-next-steps',
+      title: '下一步建议',
+      position: nodePosition(3),
+      input: [
+        '你是过夜科研晨报的下一步建议助手。上游输入是逐批聚合节点产出的台账 JSON：stats（总数/成功/失败/缺失/完成率）、items（逐项结果）、failures（失败与缺失项及原因）、unexpected（计划外结果）、queue（队列概况）。',
+        '基于台账生成 3-5 条可执行的下一步建议，必须覆盖以下角度（台账中无对应事项的角度可说明无需处理）：',
+        '1. 失败项与缺失项的补救：点名具体条目 id 与动作（如补齐数据后重跑、单独补跑该批次）。',
+        '2. 完成率偏低时的处理：如按失败原因分组重跑、缩小批次、先修复环境再整批重放。',
+        '3. 可并行或可自动化的后续动作：如把重复性整理步骤排入下一轮队列、对成功产物触发下游汇总。',
+        '输出格式（严格遵循，供下游确定性解析）：',
+        '1. 每条建议输出一行 JSON：{"suggestion": "<一句话可执行建议>"}',
+        '2. 除这些 JSON 行外，不得输出任何标题、解释、列表标记或代码块。',
+        '3. 建议 3-5 条；全部成功时也必须给出巩固与推进类建议，不得输出空内容。',
+      ].join('\n'),
+    }),
     scriptTemplateNode({
       id: 'or-morning-report',
       title: '晨报报告',
-      position: nodePosition(3),
+      position: nodePosition(4),
       code: OR_MORNING_REPORT_CODE,
     }),
   ],
@@ -1116,7 +1232,9 @@ const overnightResearch: ResearchWorkflowTemplate = {
     templateEdge('or-e1', 'or-queue-intake', 'or-batch-executor'),
     templateEdge('or-e2', 'or-queue-intake', 'or-batch-aggregate'),
     templateEdge('or-e3', 'or-batch-executor', 'or-batch-aggregate'),
-    templateEdge('or-e4', 'or-batch-aggregate', 'or-morning-report'),
+    templateEdge('or-e4', 'or-batch-aggregate', 'or-next-steps'),
+    templateEdge('or-e5', 'or-next-steps', 'or-morning-report'),
+    templateEdge('or-e6', 'or-batch-aggregate', 'or-morning-report'),
   ],
 }
 
