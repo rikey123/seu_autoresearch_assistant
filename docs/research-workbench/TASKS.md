@@ -92,6 +92,14 @@
 - T4.4 Skillpack：profile 参数校验 ∈ 已知名单（list/load/unload 400）。
 - 环境（非代码）：CRLF 敏感的两个既有测试已修（message-list-run-started-at、app-connections-panel，随 P5 合入）。
 
+### ✅ P7 用户可感知限制清零（2026-09-03，五张并行工单合入 main 22b703e）
+
+- **聊天知识库问答落服务端历史**（46a190c，BC-11）：服务端编排路由 chat-asks 写入会话历史（基座服务端零改动，经既有 studio/public/sessions 门面），引用按消息 id 从绑定表水合；刷新/换设备可见、引用可点；知识库选择态 localStorage 持久化 + 懒校验失效清理。
+- **晨报「下一步建议」自动生成**（cc9b92d）：新增 or-next-steps Agent 节点（5 节点 DAG，菱形补台账直连边），逐行 JSON 契约 + 容错解析；空/客套话回退占位并标注失败，run 不失败。
+- **PPTX 映射 v2**（30c4464）：path（M/L/H/V/C/S/Q/T/Z，A 折线近似）、rotate 仿射、渐变代表色、text+tspan 多段落/run；门控真实链路 11/11；stdout 契约只增不破（svgFeaturesMapped/Skipped）。
+- **双语对照页服务端代理**（bf4edcb）：新增 run-files 流式端点（允许根=appHome/research+全部工作区；规范化+realpath+大小写不敏感包含性+仅 .pdf，防穿越 10 用例）；pt-bilingual 改服务端 URL 内嵌（token 本机凭据取舍已注记），file:// 降级保留。
+- **LaTeX 语法高亮**（f3a8490）：复用既有 hljs latex 语言的 overlay 方案（零新依赖），像素度量单源 + 测试钉死，滚动/错误定位回归全绿，>200KB 降级。
+
 ### ⏳ 剩余（评估后保留，待后续迭代）
 
 - T3.3：`builds/<uuid>` 产物目录无回收（与 research 模块现状一致，非阻断）。
