@@ -483,6 +483,7 @@ export default {
       loading: 'Cargando…',
       emptyDocuments: 'Aún no hay documentos. Crea uno para empezar a escribir.',
       deleteDocument: 'Eliminar documento',
+      highlightDisabled: 'El código supera los 200 KB — el resaltado de sintaxis se desactiva para mantener la agilidad.',
     },
   
 

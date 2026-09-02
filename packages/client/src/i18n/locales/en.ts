@@ -474,6 +474,7 @@ export default {
       loading: 'Loading…',
       emptyDocuments: 'No documents yet. Create one to start writing.',
       deleteDocument: 'Delete document',
+      highlightDisabled: 'Source exceeds 200 KB — syntax highlighting is disabled to keep editing responsive.',
     },
   
     rag: {

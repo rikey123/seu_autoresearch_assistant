@@ -483,6 +483,7 @@ export default {
       loading: 'Wird geladen…',
       emptyDocuments: 'Noch keine Dokumente. Erstelle eines und leg los.',
       deleteDocument: 'Dokument löschen',
+      highlightDisabled: 'Der Quelltext übersteigt 200 KB — die Syntaxhervorhebung ist für flüssiges Bearbeiten deaktiviert.',
     },
   
 

@@ -483,6 +483,7 @@ export default {
       loading: '불러오는 중…',
       emptyDocuments: '아직 문서가 없습니다. 새로 만들어 작성을 시작하세요.',
       deleteDocument: '문서 삭제',
+      highlightDisabled: '소스가 200KB를 초과하여 편집 성능을 위해 구문 강조를 비활성화했습니다.',
     },
   
 

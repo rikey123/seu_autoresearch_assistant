@@ -471,6 +471,7 @@ export default {
       loading: '載入中…',
       emptyDocuments: '還沒有文件。建立一個開始撰寫。',
       deleteDocument: '刪除文件',
+      highlightDisabled: '原始碼超過 200 KB，已關閉語法高亮以確保編輯流暢。',
     },
   
 

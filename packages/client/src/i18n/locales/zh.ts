@@ -472,6 +472,7 @@ export default {
       loading: '加载中…',
       emptyDocuments: '还没有文档。新建一个开始写作。',
       deleteDocument: '删除文档',
+      highlightDisabled: '源码超过 200 KB，已关闭语法高亮以保证编辑流畅。',
     },
   
     rag: {

@@ -483,6 +483,7 @@ export default {
       loading: 'Chargement…',
       emptyDocuments: 'Aucun document pour l’instant. Créez-en un pour commencer à écrire.',
       deleteDocument: 'Supprimer le document',
+      highlightDisabled: 'Le source dépasse 200 Ko — la coloration syntaxique est désactivée pour préserver la fluidité.',
     },
   
 
