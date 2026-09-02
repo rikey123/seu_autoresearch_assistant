@@ -21,13 +21,28 @@ describe('owned process tree cleanup', () => {
     expect(fallback).toHaveBeenCalledOnce()
   })
 
-  it('preserves the existing signal behavior outside Windows', () => {
-    const taskkill = vi.fn()
-    const fallback = vi.fn()
+  it.each(['linux', 'darwin', 'freebsd', 'openbsd', 'aix', 'sunos'] as const)(
+    'preserves the existing direct-kill signal behavior on %s',
+    (platform) => {
+      const taskkill = vi.fn()
+      const directKill = vi.fn()
 
-    killOwnedProcessTree(4321, fallback, { platform: 'linux', taskkill })
+      killOwnedProcessTree(4321, directKill, { platform, taskkill })
 
-    expect(taskkill).not.toHaveBeenCalled()
-    expect(fallback).toHaveBeenCalledOnce()
+      expect(taskkill).not.toHaveBeenCalled()
+      expect(directKill).toHaveBeenCalledOnce()
+    },
+  )
+
+  it('falls back to the direct kill when the pid is missing or invalid on Windows', () => {
+    for (const pid of [null, undefined, 0, -5, Number.NaN] as const) {
+      const taskkill = vi.fn()
+      const fallback = vi.fn()
+
+      killOwnedProcessTree(pid, fallback, { platform: 'win32', taskkill })
+
+      expect(taskkill, `pid ${String(pid)} must not reach taskkill`).not.toHaveBeenCalled()
+      expect(fallback, `pid ${String(pid)} must use the direct kill`).toHaveBeenCalledOnce()
+    }
   })
 })

@@ -33,6 +33,28 @@ const sessionStoreMock = vi.hoisted(() => ({
   createSession: vi.fn((data: { id: string }) => ({ id: data.id })),
 }))
 
+/**
+ * Delegating spies on the run-store so individual tests can simulate a
+ * persistence failure, a disappeared row, or a changed run between rerun
+ * preflight reads while every other call keeps the real store behavior.
+ */
+const runStoreSpies = vi.hoisted(() => ({
+  getWorkflowRun: null as null | ReturnType<typeof vi.fn>,
+  updateWorkflowRunNodeSession: null as null | ReturnType<typeof vi.fn>,
+}))
+
+/**
+ * The SQLite-backed real implementations, captured on the FIRST load of the
+ * mocked run-store. The static vi.mock factory effectively runs once (Vitest
+ * caches the mocked instance across vi.resetModules), so `??=` keeps these
+ * bound to the real database-backed store no matter what the JSON-fallback
+ * test rebinds later.
+ */
+const runStoreSqlite = vi.hoisted(() => ({
+  getWorkflowRun: null as null | ((id: string) => any),
+  updateWorkflowRunNodeSession: null as null | ((id: string, patch: unknown) => any),
+}))
+
 vi.mock('../../packages/server/src/modules/studio/services/workflow/skill-resolver', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../packages/server/src/modules/studio/services/workflow/skill-resolver')>()
   return {
@@ -54,6 +76,23 @@ vi.mock('../../packages/server/src/modules/studio/public/workflow-runtime', () =
 vi.mock('../../packages/server/src/modules/studio/services/agent-availability', () => ({
   assertAgentAvailable: vi.fn(),
 }))
+
+vi.mock('../../packages/server/src/modules/studio/repositories/workflow-run-store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../packages/server/src/modules/studio/repositories/workflow-run-store')>()
+  const getWorkflowRun = runStoreSpies.getWorkflowRun ??= vi.fn(actual.getWorkflowRun)
+  const updateWorkflowRunNodeSession = runStoreSpies.updateWorkflowRunNodeSession ??= vi.fn(actual.updateWorkflowRunNodeSession)
+  // Rebinding keeps the spies delegating to the freshest actual implementation,
+  // which matters for the JSON-fallback test that re-imports these modules.
+  runStoreSqlite.getWorkflowRun ??= actual.getWorkflowRun
+  runStoreSqlite.updateWorkflowRunNodeSession ??= actual.updateWorkflowRunNodeSession
+  getWorkflowRun.mockImplementation(actual.getWorkflowRun)
+  updateWorkflowRunNodeSession.mockImplementation(actual.updateWorkflowRunNodeSession)
+  return {
+    ...actual,
+    getWorkflowRun,
+    updateWorkflowRunNodeSession,
+  }
+})
 
 vi.mock('../../packages/server/src/modules/studio/repositories/session-store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../packages/server/src/modules/studio/repositories/session-store')>()
@@ -82,12 +121,18 @@ beforeAll(async () => {
   initAllStores()
 })
 
-beforeEach(() => {
+beforeEach(async () => {
   chatRunMock.runAndWait.mockReset()
   chatRunMock.abortSession.mockReset()
   chatRunMock.sessionOutputs.clear()
   deterministicExecutorMock.run.mockReset()
   sessionStoreMock.createSession.mockClear()
+  // Restore the delegating run-store spies so per-test overrides never leak into
+  // the next test. The vi.mock factory rebinds the underlying real functions on
+  // every module load; here we only restore call history and default behavior.
+  await import('../../packages/server/src/modules/studio/repositories/workflow-run-store')
+  runStoreSpies.getWorkflowRun?.mockReset().mockImplementation(runStoreSqlite.getWorkflowRun!)
+  runStoreSpies.updateWorkflowRunNodeSession?.mockReset().mockImplementation(runStoreSqlite.updateWorkflowRunNodeSession!)
 })
 
 async function importManagerUnderTest() {
@@ -96,6 +141,10 @@ async function importManagerUnderTest() {
     workflowStore: await import('../../packages/server/src/modules/studio/repositories/workflow-store'),
     executor: await import('../../packages/server/src/modules/studio/services/workflow/deterministic-executor'),
   }
+}
+
+async function importRunStoreUnderTest() {
+  return import('../../packages/server/src/modules/studio/repositories/workflow-run-store')
 }
 
 describe('deterministic workflow node normalization', () => {
@@ -317,6 +366,330 @@ describe('deterministic workflow dispatch', () => {
   })
 })
 
+describe('deterministic engine rerun guards', () => {
+  it('rejects with 409 when the run changes between rerun preflight reads', async () => {
+    const { manager, workflowStore } = await importManagerUnderTest()
+    const runStore = await importRunStoreUnderTest()
+    chatRunMock.runAndWait.mockResolvedValue({ ok: true, output: 'agent output' })
+    deterministicExecutorMock.run.mockResolvedValue({ output: 'SCRIPT-1' })
+
+    const workflow = workflowStore.createWorkflow({
+      name: 'preflight changed run', profile: 'default',
+      nodes: [
+        { id: 'script-1', type: 'script', data: { title: 'Script', runtime: 'node', code: 'console.log(1)' } },
+        { id: 'agent-1', type: 'agent', data: { title: 'Agent', agent: 'hermes', input: 'polish' } },
+      ],
+      edges: [{ id: 'e1', source: 'script-1', target: 'agent-1' }],
+    })
+    const instance = new manager.WorkflowManager()
+    const first = await instance.runNow(workflow.id)
+    expect(first.run.status).toBe('completed')
+
+    // The first rerun read sees the persisted record; every later read simulates
+    // a concurrent lifecycle change (e.g. another worker reset the run).
+    let reads = 0
+    const getWorkflowRunSpy = runStoreSpies.getWorkflowRun!
+    getWorkflowRunSpy.mockImplementation((id: string) => {
+      const record = runStoreSqlite.getWorkflowRun!(id)
+      reads += 1
+      if (reads > 1 && record) return { ...record, started_at: (record.started_at || 0) + 1000 }
+      return record
+    })
+    try {
+      await expect(instance.rerunFromNode(workflow.id, first.run.id, 'agent-1'))
+        .rejects.toMatchObject({ status: 409, message: 'workflow run changed during rerun preflight' })
+      // Fail closed: the terminal run is still completed and no new evidence was appended.
+      expect(runStore.getWorkflowRun(first.run.id)!.status).toBe('completed')
+      expect(runStore.listWorkflowRunNodeSessions(first.run.id)).toHaveLength(2)
+      expect(chatRunMock.runAndWait).toHaveBeenCalledTimes(1)
+    } finally {
+      getWorkflowRunSpy.mockReset()
+      getWorkflowRunSpy.mockImplementation(runStoreSqlite.getWorkflowRun!)
+    }
+  })
+
+  it('rejects with 409 when an upstream deterministic session row disappears before rerun', async () => {
+    const { manager, workflowStore } = await importManagerUnderTest()
+    const runStore = await importRunStoreUnderTest()
+    chatRunMock.runAndWait.mockResolvedValue({ ok: true, output: 'agent output' })
+    deterministicExecutorMock.run.mockResolvedValue({ output: 'SCRIPT-1' })
+
+    const workflow = workflowStore.createWorkflow({
+      name: 'missing upstream session', profile: 'default',
+      nodes: [
+        { id: 'script-1', type: 'script', data: { title: 'Script', runtime: 'node', code: 'console.log(1)' } },
+        { id: 'agent-1', type: 'agent', data: { title: 'Agent', agent: 'hermes', input: 'polish' } },
+      ],
+      edges: [{ id: 'e1', source: 'script-1', target: 'agent-1' }],
+    })
+    const instance = new manager.WorkflowManager()
+    const first = await instance.runNow(workflow.id)
+    expect(first.run.status).toBe('completed')
+
+    const scriptSessions = runStore.listWorkflowRunNodeSessions(first.run.id).filter(session => session.node_id === 'script-1')
+    expect(scriptSessions).toHaveLength(1)
+    const deleted = runStore.deleteWorkflowRunNodeSessions(first.run.id, ['script-1'])
+    expect(deleted).toHaveLength(1)
+
+    await expect(instance.rerunFromNode(workflow.id, first.run.id, 'agent-1'))
+      .rejects.toMatchObject({ status: 409, message: 'Upstream node Script has no completed output' })
+    // Fail closed: no new evidence and the run stays terminal.
+    expect(runStore.getWorkflowRun(first.run.id)!.status).toBe('completed')
+    expect(runStore.listWorkflowRunNodeSessions(first.run.id)).toHaveLength(1)
+    expect(chatRunMock.runAndWait).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('deterministic executor and evidence edge cases', () => {
+  const scriptNode = (id: string, title: string) => ({
+    id, type: 'script', data: { title, runtime: 'node', code: 'console.log(1)' },
+  })
+
+  it('stringifies non-Error executor rejections without crashing the run', async () => {
+    const { manager, workflowStore } = await importManagerUnderTest()
+    deterministicExecutorMock.run.mockRejectedValueOnce('kaputt-string')
+
+    const workflow = workflowStore.createWorkflow({
+      name: 'non error rejection string', profile: 'default',
+      nodes: [scriptNode('script-1', 'String failure')],
+      edges: [],
+    })
+    const instance = new manager.WorkflowManager()
+    const result = await instance.runNow(workflow.id)
+    expect(result.run.status).toBe('failed')
+    expect(result.run.error).toContain('kaputt-string')
+    const row = result.nodeSessions.find(session => session.node_id === 'script-1')!
+    expect(row.status).toBe('failed')
+    expect(row.error).toBe('kaputt-string')
+    expect(chatRunMock.runAndWait).not.toHaveBeenCalled()
+    expect(sessionStoreMock.createSession).not.toHaveBeenCalled()
+
+    // Promise rejection with no error payload at all must also stay structured.
+    deterministicExecutorMock.run.mockRejectedValueOnce(undefined)
+    const noPayloadWorkflow = workflowStore.createWorkflow({
+      name: 'non error rejection undefined', profile: 'default',
+      nodes: [scriptNode('script-2', 'Undefined failure')],
+      edges: [],
+    })
+    const noPayloadResult = await instance.runNow(noPayloadWorkflow.id)
+    expect(noPayloadResult.run.status).toBe('failed')
+    expect(noPayloadResult.run.error).toContain('undefined')
+    const noPayloadRow = noPayloadResult.nodeSessions.find(session => session.node_id === 'script-2')!
+    expect(noPayloadRow.status).toBe('failed')
+    expect(noPayloadRow.error).toBe('undefined')
+  })
+
+  it('fails the run when the node session completion update cannot be persisted', async () => {
+    const { manager, workflowStore } = await importManagerUnderTest()
+    const dbModule = await import('../../packages/server/src/modules/studio/infrastructure/database/index')
+    const db = dbModule.getDb()!
+    // Any write that flips a running deterministic row to completed aborts,
+    // simulating a disk/database failure at the persistence boundary.
+    db.exec(`
+      CREATE TRIGGER fail_deterministic_completion BEFORE UPDATE ON workflow_run_node_sessions
+      WHEN NEW.status = 'completed' AND OLD.status = 'running'
+      BEGIN SELECT RAISE(ABORT, 'node session persist failed'); END
+    `)
+    try {
+      deterministicExecutorMock.run.mockResolvedValue({ output: 'SCRIPT-1' })
+      const workflow = workflowStore.createWorkflow({
+        name: 'session persist failure', profile: 'default',
+        nodes: [scriptNode('script-1', 'Persist failure')],
+        edges: [],
+      })
+      const instance = new manager.WorkflowManager()
+      const result = await instance.runNow(workflow.id)
+      expect(result.run.status).toBe('failed')
+      expect(result.run.error).toContain('node session persist failed')
+      const row = result.nodeSessions.find(session => session.node_id === 'script-1')!
+      // The failure marker write succeeds (it never flips to completed), so the
+      // operator-facing row keeps the persistence error.
+      expect(row.status).toBe('failed')
+      expect(row.error).toBe('node session persist failed')
+      expect(row.output_json).toBe('')
+    } finally {
+      db.exec('DROP TRIGGER IF EXISTS fail_deterministic_completion')
+    }
+  })
+
+  it('tolerates a vanished node session row on the completion update without crashing', async () => {
+    const { manager, workflowStore } = await importManagerUnderTest()
+    const runStore = await importRunStoreUnderTest()
+    deterministicExecutorMock.run.mockResolvedValue({ output: 'SCRIPT-1' })
+
+    const workflow = workflowStore.createWorkflow({
+      name: 'vanished session row', profile: 'default',
+      nodes: [scriptNode('script-1', 'Vanished row')],
+      edges: [],
+    })
+    const instance = new manager.WorkflowManager()
+    // Simulate a concurrent delete of the node row between creation and the
+    // completion write: the store no-ops (returns null) and the manager must
+    // keep the execution result and close the run instead of crashing.
+    runStoreSpies.updateWorkflowRunNodeSession!.mockImplementationOnce(() => null)
+    const result = await instance.runNow(workflow.id)
+    expect(result.run.status).toBe('completed')
+    const row = result.nodeSessions.find(session => session.node_id === 'script-1')!
+    // The row was never updated: it stays in its created running state with the
+    // empty output default, which is the documented best-effort semantics.
+    expect(row.status).toBe('running')
+    expect(row.output_json).toBe('')
+  })
+
+  it('records success, failure, and always edge evidence from a deterministic node', async () => {
+    const { manager, workflowStore } = await importManagerUnderTest()
+    const runStore = await importRunStoreUnderTest()
+    deterministicExecutorMock.run.mockImplementation(async (request: Record<string, unknown>) => ({ output: `OUT-${request.nodeId}` }))
+
+    const workflow = workflowStore.createWorkflow({
+      name: 'deterministic evidence matrix', profile: 'default',
+      nodes: [
+        scriptNode('probe', 'Probe'),
+        scriptNode('ok-handler', 'OK handler'),
+        scriptNode('failure-handler', 'Failure handler'),
+        scriptNode('always-handler', 'Always handler'),
+      ],
+      edges: [
+        { id: 'on-success', source: 'probe', target: 'ok-handler', data: { orchestration: { route: 'success' } } },
+        { id: 'on-failure', source: 'probe', target: 'failure-handler', data: { orchestration: { route: 'failure' } } },
+        { id: 'on-always', source: 'probe', target: 'always-handler', data: { orchestration: { route: 'always' } } },
+      ],
+    })
+    const instance = new manager.WorkflowManager()
+    const result = await instance.runNow(workflow.id)
+    expect(result.run.status).toBe('completed')
+
+    const evidence = runStore.listWorkflowRunEdgeEvaluations(result.run.id)
+      .filter(item => item.source_node_id === 'probe')
+      .map(item => ({ edge: item.edge_id, status: item.status, reason: item.reason, outcome: item.source_outcome, route: item.route }))
+      .sort((left, right) => left.edge.localeCompare(right.edge))
+    expect(evidence).toEqual([
+      { edge: 'on-always', status: 'taken', reason: null, outcome: 'success', route: 'always' },
+      { edge: 'on-failure', status: 'not_taken', reason: 'route_not_matched', outcome: 'success', route: 'failure' },
+      { edge: 'on-success', status: 'taken', reason: null, outcome: 'success', route: 'success' },
+    ])
+    // Only the taken routes dispatched their deterministic handlers.
+    expect(result.nodeSessions.map(session => session.node_id).sort()).toEqual(['always-handler', 'ok-handler', 'probe'])
+    expect(result.nodeSessions.find(session => session.node_id === 'ok-handler')!.output_json).toBe('OUT-ok-handler')
+    expect(result.nodeSessions.find(session => session.node_id === 'always-handler')!.output_json).toBe('OUT-always-handler')
+    expect(sessionStoreMock.createSession).not.toHaveBeenCalled()
+
+    // Failing probe: the failure and always edges flip their dispatch, the
+    // success route is skipped, and the run still closes with the node error.
+    deterministicExecutorMock.run.mockReset()
+    deterministicExecutorMock.run.mockImplementation(async (request: Record<string, unknown>) => {
+      if (request.nodeId === 'probe') throw new Error('probe exploded')
+      return { output: `OUT-${request.nodeId}` }
+    })
+    const failingWorkflow = workflowStore.createWorkflow({
+      name: 'deterministic evidence failure', profile: 'default',
+      nodes: [
+        scriptNode('probe', 'Probe'),
+        scriptNode('ok-handler', 'OK handler'),
+        scriptNode('failure-handler', 'Failure handler'),
+        scriptNode('always-handler', 'Always handler'),
+      ],
+      edges: [
+        { id: 'on-success', source: 'probe', target: 'ok-handler', data: { orchestration: { route: 'success' } } },
+        { id: 'on-failure', source: 'probe', target: 'failure-handler', data: { orchestration: { route: 'failure' } } },
+        { id: 'on-always', source: 'probe', target: 'always-handler', data: { orchestration: { route: 'always' } } },
+      ],
+    })
+    const failingResult = await instance.runNow(failingWorkflow.id)
+    expect(failingResult.run.status).toBe('failed')
+    expect(failingResult.run.error).toContain('probe exploded')
+    const failingEvidence = runStore.listWorkflowRunEdgeEvaluations(failingResult.run.id)
+      .filter(item => item.source_node_id === 'probe')
+      .map(item => ({ edge: item.edge_id, status: item.status, reason: item.reason, outcome: item.source_outcome }))
+      .sort((left, right) => left.edge.localeCompare(right.edge))
+    expect(failingEvidence).toEqual([
+      { edge: 'on-always', status: 'taken', reason: null, outcome: 'failure' },
+      { edge: 'on-failure', status: 'taken', reason: null, outcome: 'failure' },
+      { edge: 'on-success', status: 'not_taken', reason: 'route_not_matched', outcome: 'failure' },
+    ])
+    expect(failingResult.nodeSessions.map(session => session.node_id).sort()).toEqual(['always-handler', 'failure-handler', 'probe'])
+    expect(failingResult.nodeSessions.find(session => session.node_id === 'probe')!.error).toBe('probe exploded')
+  })
+
+  it('records deterministic node evidence inside a bounded feedback loop', async () => {
+    const { manager, workflowStore } = await importManagerUnderTest()
+    const runStore = await importRunStoreUnderTest()
+    deterministicExecutorMock.run.mockImplementation(async (request: Record<string, unknown>) => ({ output: `OUT-${request.nodeId}` }))
+
+    const workflow = workflowStore.createWorkflow({
+      name: 'deterministic feedback loop', profile: 'default',
+      nodes: [
+        scriptNode('check', 'Check'),
+        scriptNode('fix', 'Fix'),
+      ],
+      edges: [
+        { id: 'forward', source: 'check', target: 'fix' },
+        { id: 'retry', source: 'fix', target: 'check', data: { orchestration: { route: 'success', feedback: { maxIterations: 2 } } } },
+      ],
+    })
+    const instance = new manager.WorkflowManager()
+    const result = await instance.runNow(workflow.id)
+    expect(result.run.status).toBe('completed')
+
+    expect(result.nodeSessions.map(session => [session.node_id, session.execution_id, session.iteration_path])).toEqual([
+      ['check', 'check@loop:retry:0', [{ loopId: 'loop:retry', iteration: 0 }]],
+      ['fix', 'fix@loop:retry:0', [{ loopId: 'loop:retry', iteration: 0 }]],
+      ['check', 'check@loop:retry:1', [{ loopId: 'loop:retry', iteration: 1 }]],
+      ['fix', 'fix@loop:retry:1', [{ loopId: 'loop:retry', iteration: 1 }]],
+    ])
+    expect(deterministicExecutorMock.run).toHaveBeenCalledTimes(4)
+    expect(result.nodeSessions.every(session => session.output_json !== '')).toBe(true)
+
+    expect(runStore.listWorkflowRunEdgeEvaluations(result.run.id).filter(item => item.edge_id === 'forward').map(item => ({
+      source: item.source_execution_id, status: item.status, outcome: item.source_outcome, path: item.iteration_path,
+    }))).toEqual([
+      { source: 'check@loop:retry:0', status: 'taken', outcome: 'success', path: [{ loopId: 'loop:retry', iteration: 0 }] },
+      { source: 'check@loop:retry:1', status: 'taken', outcome: 'success', path: [{ loopId: 'loop:retry', iteration: 1 }] },
+    ])
+    expect(runStore.listWorkflowRunEdgeEvaluations(result.run.id).filter(item => item.edge_id === 'retry').map(item => ({
+      source: item.source_execution_id, status: item.status, reason: item.reason, path: item.iteration_path,
+    }))).toEqual([
+      { source: 'fix@loop:retry:0', status: 'taken', reason: null, path: [{ loopId: 'loop:retry', iteration: 0 }] },
+      { source: 'fix@loop:retry:1', status: 'not_taken', reason: 'iteration_limit_reached', path: [{ loopId: 'loop:retry', iteration: 1 }] },
+    ])
+    expect(runStore.listWorkflowRunLoopEpochs(result.run.id).map(epoch => ({
+      loopId: epoch.loop_id, iteration: epoch.iteration, status: epoch.status, exitReason: epoch.exit_reason,
+    }))).toEqual([
+      { loopId: 'loop:retry', iteration: 0, status: 'completed', exitReason: 'feedback_taken' },
+      { loopId: 'loop:retry', iteration: 1, status: 'completed', exitReason: 'iteration_limit_reached' },
+    ])
+  })
+
+  it('runs multiple ready deterministic nodes in parallel and collects every output', async () => {
+    const { manager, workflowStore } = await importManagerUnderTest()
+    const started: string[] = []
+    const releaseAll: Array<() => void> = []
+    deterministicExecutorMock.run.mockImplementation((request: Record<string, unknown>) => {
+      started.push(String(request.nodeId))
+      return new Promise(resolve => { releaseAll.push(() => resolve({ output: `OUT-${request.nodeId}` })) })
+    })
+
+    const workflow = workflowStore.createWorkflow({
+      name: 'parallel deterministic start', profile: 'default',
+      nodes: [scriptNode('a', 'Alpha'), scriptNode('b', 'Beta'), scriptNode('c', 'Gamma')],
+      edges: [],
+    })
+    const instance = new manager.WorkflowManager()
+    const runPromise = instance.runNow(workflow.id)
+    // All three ready units must be dispatched before any of them settles; a
+    // serial scheduler would only ever have one started request here.
+    await vi.waitFor(() => expect(started).toHaveLength(3))
+    expect(new Set(started)).toEqual(new Set(['a', 'b', 'c']))
+    expect(releaseAll).toHaveLength(3)
+    for (const release of releaseAll) release()
+    const result = await runPromise
+    expect(result.run.status).toBe('completed')
+    expect(result.nodeSessions.map(session => session.node_id).sort()).toEqual(['a', 'b', 'c'])
+    expect(result.nodeSessions.every(session => session.status === 'completed')).toBe(true)
+    expect(result.nodeSessions.map(session => session.output_json).sort()).toEqual(['OUT-a', 'OUT-b', 'OUT-c'])
+  })
+})
+
 describe('deterministic engine lifecycle', () => {
   async function waitFor(predicate: () => boolean, timeoutMs: number, label: string): Promise<void> {
     const deadline = Date.now() + timeoutMs
@@ -397,6 +770,14 @@ describe('deterministic engine lifecycle', () => {
     }
   })
 
+  // Whole-tree teardown is a Windows-only guarantee (taskkill /T /F). The
+  // POSIX branch of killOwnedProcessTree deliberately keeps the caller's
+  // existing signal behavior: it signals only the direct child and reparented
+  // grandchildren are not part of the documented contract (see
+  // packages/server/src/modules/studio/infrastructure/process-tree.ts). The
+  // direct-child kill path on POSIX is covered by the un-gated long-script
+  // test above; the platform matrix of the fallback itself is unit-covered in
+  // tests/server/process-tree.test.ts.
   it.runIf(process.platform === 'win32')('run deadline after a script spawned a grandchild tears down the whole process tree', { timeout: 30_000 }, async () => {
     const { manager, workflowStore, executor } = await importManagerUnderTest()
     const childPidPath = join(deterministicTestRoot, `tree-child-${randomUUID()}.txt`)
@@ -493,5 +874,78 @@ describe('deterministic engine lifecycle', () => {
     expect(scope).toMatch(/^rerun:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
     expect(scope).not.toMatch(/^rerun:\d+$/)
     expect(rerunRows.every(row => row.execution_id.includes(String(scope)))).toBe(true)
+  })
+})
+
+describe('deterministic engine JSON store fallback', () => {
+  const databaseIndexPath = '../../packages/server/src/modules/studio/infrastructure/database/index'
+  const runStorePath = '../../packages/server/src/modules/studio/repositories/workflow-run-store'
+
+  it('reruns through the CAS JSON reset when SQLite is unavailable', { timeout: 30_000 }, async () => {
+    // The rest of this suite runs on SQLite; this test simulates an environment
+    // where node:sqlite is unavailable (getDb() === null) and exercises the
+    // read-compare-write fallback of resetTerminalRunForRerun end to end.
+    // vi.doMock is required because Vitest caches the statically mocked
+    // run-store instance across vi.resetModules; the doMock replaces it with a
+    // fresh module whose database import resolves through the getDb override.
+    const { closeDb } = await import(databaseIndexPath)
+    closeDb()
+    vi.resetModules()
+    vi.doMock(databaseIndexPath, async (importOriginal) => {
+      const actual = await importOriginal()
+      return { ...actual, getDb: () => null }
+    })
+    vi.doMock(runStorePath, async (importOriginal) => {
+      const actual = await importOriginal()
+      const getWorkflowRun = runStoreSpies.getWorkflowRun ??= vi.fn(actual.getWorkflowRun)
+      const updateWorkflowRunNodeSession = runStoreSpies.updateWorkflowRunNodeSession ??= vi.fn(actual.updateWorkflowRunNodeSession)
+      getWorkflowRun.mockReset().mockImplementation(actual.getWorkflowRun)
+      updateWorkflowRunNodeSession.mockReset().mockImplementation(actual.updateWorkflowRunNodeSession)
+      return { ...actual, getWorkflowRun, updateWorkflowRunNodeSession }
+    })
+    try {
+      const runStore = await import(runStorePath)
+      const workflowStore = await import('../../packages/server/src/modules/studio/repositories/workflow-store')
+      const { WorkflowManager } = await import('../../packages/server/src/modules/studio/services/workflow/manager')
+      chatRunMock.runAndWait.mockResolvedValue({ ok: true, output: 'agent output' })
+      deterministicExecutorMock.run.mockResolvedValueOnce({ output: 'JSON-1' })
+
+      const workflow = workflowStore.createWorkflow({
+        name: 'json fallback rerun', profile: 'default',
+        nodes: [{ id: 'script-1', type: 'script', data: { title: 'Script', runtime: 'node', code: 'console.log(1)' } }],
+        edges: [],
+      })
+      const instance = new WorkflowManager()
+      const first = await instance.runNow(workflow.id)
+      expect(first.run.status).toBe('completed')
+      expect(first.nodeSessions).toHaveLength(1)
+      expect(first.nodeSessions[0].output_json).toBe('JSON-1')
+
+      deterministicExecutorMock.run.mockResolvedValueOnce({ output: 'JSON-2' })
+      const rerun = await instance.rerunFromNode(workflow.id, first.run.id, 'script-1')
+      expect(rerun.run.status).toBe('completed')
+      const scriptRows = rerun.nodeSessions.filter(session => session.node_id === 'script-1')
+      expect(scriptRows).toHaveLength(2)
+      expect(scriptRows.at(-1)!.output_json).toBe('JSON-2')
+      expect(scriptRows.at(-1)!.session_id).toBe('')
+      // The terminal reset really flipped the stored row through the JSON store
+      // (without allow_terminal_reset the CAS reset would have been rejected).
+      expect(runStore.getWorkflowRun(first.run.id)!.status).toBe('completed')
+      const rawJson = JSON.parse(readFileSync(join(deterministicTestDbDir, 'hermes-web-ui.json'), 'utf8'))
+      expect(rawJson.workflow_runs[first.run.id].status).toBe('completed')
+      expect(rawJson.workflow_run_node_sessions[scriptRows.at(-1)!.id].output_json).toBe('JSON-2')
+    } finally {
+      // Point the shared spies back at the SQLite-bound implementations and
+      // restore the real module graph so the rest of the suite keeps its DB.
+      runStoreSpies.getWorkflowRun?.mockReset().mockImplementation(runStoreSqlite.getWorkflowRun!)
+      runStoreSpies.updateWorkflowRunNodeSession?.mockReset().mockImplementation(runStoreSqlite.updateWorkflowRunNodeSession!)
+      vi.doUnmock(databaseIndexPath)
+      vi.doUnmock(runStorePath)
+      // Re-import the real database module and open a fresh connection on the
+      // same test DB file so afterAll can close it and remove the temp tree.
+      vi.resetModules()
+      const { getDb } = await import(databaseIndexPath)
+      getDb()
+    }
   })
 })
