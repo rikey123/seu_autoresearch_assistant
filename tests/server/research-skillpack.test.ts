@@ -190,6 +190,41 @@ describe('research skill pack HTTP surface', () => {
     expect(restored.body.pack.skills.every((skill: any) => skill.status === 'installed')).toBe(true)
   })
 
+  it('keeps guarding a modified installed copy when the pack source moved on too', async () => {
+    // Combined-state regression: the installed copy carries a user edit AND
+    // the manifest records a stale source hash (the pack source changed since
+    // install). This is exactly the state the status surface reports as
+    // "modified", so a plain load must refuse to clobber instead of silently
+    // overwriting. The stale hash is written into the test-owned manifest
+    // rather than mutating the shipped assets, keeping parallel test files
+    // that read the assets deterministic.
+    const manifestPath = join(hermesRoot, 'skills', '.research-skillpacks.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    manifest.skills['figure-standards'] = { ...manifest.skills['figure-standards'], sourceHash: '0'.repeat(64) }
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+
+    const modifiedSkill = join(hermesRoot, 'skills', 'figure-standards', 'SKILL.md')
+    writeFileSync(modifiedSkill, readFileSync(modifiedSkill, 'utf8') + '\nUser edit survives source upgrades.\n', 'utf8')
+
+    const status = await dispatch('GET', `/api/studio/research/skillpacks/${PACK_ID}`)
+    const figureStandards = status.body.pack.skills.find((skill: any) => skill.name === 'figure-standards')
+    expect(figureStandards.status).toBe('modified')
+
+    const plainReload = await dispatch('POST', `/api/studio/research/skillpacks/${PACK_ID}/load`, {})
+    expect(plainReload.body.result.installed).toEqual([])
+    expect(plainReload.body.result.updated).toEqual([])
+    const guarded = plainReload.body.result.skipped.find((entry: any) => entry.name === 'figure-standards')
+    expect(guarded.action).toBe('skipped')
+    expect(guarded.detail).toContain('force:true')
+    expect(readFileSync(modifiedSkill, 'utf8')).toContain('User edit survives source upgrades.')
+
+    const forcedReload = await dispatch('POST', `/api/studio/research/skillpacks/${PACK_ID}/load`, { force: true })
+    expect(forcedReload.body.result.updated).toEqual(['figure-standards'])
+    expect(readFileSync(modifiedSkill, 'utf8')).toBe(readFileSync(join(ASSETS_DIR, 'figure-standards', 'SKILL.md'), 'utf8'))
+    const restoredStatus = await dispatch('GET', `/api/studio/research/skillpacks/${PACK_ID}`)
+    expect(restoredStatus.body.pack.skills.every((skill: any) => skill.status === 'installed')).toBe(true)
+  })
+
   it('never overwrites an unmanaged colliding skill folder', async () => {
     // A second isolated profile root keeps this scenario independent of the
     // already-loaded default profile.

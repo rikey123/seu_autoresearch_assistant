@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -386,4 +386,103 @@ describe.skipIf(!realPptxReady)('figure-drawing gated real pptx export (python-p
     expect(widthPx).toBe(900)
     expect(heightPx).toBe(560)
   }, 90000)
+})
+
+// Direct probes for the deterministic script nodes: the SVG safety filter of
+// fd-render and the exactly-one-settlement contract of fd-pptx run the REAL
+// template script bodies through `node -e` — the same structured invocation
+// the deterministic executor uses — without the full engine around them.
+describe('figure-drawing script node hardening (real subprocess)', () => {
+  const scriptOutRoot = join(e2eTestRoot, 'script-hardening')
+
+  async function figureNodeCode(nodeId: string): Promise<string> {
+    const { getResearchWorkflowTemplate } = await import('../../packages/server/src/modules/research/workflows/template-service')
+    const node = getResearchWorkflowTemplate('figure-drawing')!.nodes.find(candidate => candidate.id === nodeId)
+    expect(node, `template node ${nodeId} must exist`).toBeTruthy()
+    return node!.data.code!
+  }
+
+  function runScriptNode(code: string, input: string, env: Record<string, string> = {}) {
+    return spawnSync(process.execPath, ['-e', code], {
+      input,
+      encoding: 'utf8',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ...env },
+    })
+  }
+
+  function renderUpstream(outDir: string, svg: string): string {
+    const brief = { title: 'Guard Figure', figureType: 'bar', outDir }
+    return [
+      '[Workflow upstream results]',
+      '[Upstream: 绘图需求接入]',
+      JSON.stringify(brief),
+      '[Upstream: SVG 绘图生成]',
+      '```svg',
+      svg,
+      '```',
+    ].join('\n')
+  }
+
+  it('renders benign SVG untouched even when its prose contains onward-like words', async () => {
+    // False-positive guard: the on* attribute filter anchors on whitespace and
+    // requires a trailing "=", so prose like "Press onward for..." and the
+    // "on" inside "font" / "Interpretation" must never reject a real figure.
+    const outDir = join(scriptOutRoot, 'benign')
+    const benignSvg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200" viewBox="0 0 300 200">',
+      '  <rect x="0" y="0" width="300" height="200" fill="#ffffff"/>',
+      '  <text x="150" y="70" font-size="18" text-anchor="middle" fill="#1f2430">Interpretation</text>',
+      '  <text x="150" y="110" font-size="14" text-anchor="middle" fill="#6b7280">Press onward for the next analysis step</text>',
+      '  <rect x="40" y="140" width="220" height="30" fill="#0072B2"/>',
+      '</svg>',
+    ].join('\n')
+    const result = runScriptNode(await figureNodeCode('fd-render'), renderUpstream(outDir, benignSvg))
+    expect(result.stderr, result.stderr).toBe('')
+    expect(result.status, result.stderr).toBe(0)
+    expect(() => JSON.parse(result.stdout)).not.toThrow()
+    const render = JSON.parse(result.stdout) as Record<string, unknown>
+    expect(render).toMatchObject({ format: 'svg', svgPath: join(outDir, 'figure.svg'), width: 300, height: 200 })
+    expect(readFileSync(join(outDir, 'figure.svg'), 'utf8')).toContain('Press onward')
+  })
+
+  it.each([
+    ['inline-event-handler', '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect x="0" y="0" width="300" height="200" fill="#ffffff" onload="alert(1)"/></svg>'],
+    ['javascript-url', '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><a href="javascript:alert(1)"><text x="10" y="20">bad link</text></a></svg>'],
+    ['foreign-image-use-element', '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><image href="https://example.com/pixel.png"/><use href="#ghost"/><foreignObject width="10" height="10"><body xmlns="http://www.w3.org/1999/xhtml"/></foreignObject></svg>'],
+  ])('rejects an SVG carrying an unsafe payload: %s', async (slug, svg) => {
+    // Pre-created so "figure.svg was never written" is a meaningful assertion:
+    // the rejection happens before the render node touches the filesystem.
+    const outDir = join(scriptOutRoot, `rejected-${slug}`)
+    mkdirSync(outDir, { recursive: true })
+    const result = runScriptNode(await figureNodeCode('fd-render'), renderUpstream(outDir, svg))
+    expect(result.status, result.stderr).not.toBe(0)
+    expect(String(result.stderr)).toContain('render node rejected the SVG document')
+    expect(result.stdout).toBe('')
+    expect(existsSync(join(outDir, 'figure.svg'))).toBe(false)
+  })
+
+  it('emits exactly one JSON settlement when the pptx python binary fails to spawn', async () => {
+    const outDir = join(scriptOutRoot, 'pptx-spawn-failure')
+    mkdirSync(outDir, { recursive: true })
+    const svgPath = join(outDir, 'figure.svg')
+    writeFileSync(svgPath, '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"></svg>', 'utf8')
+    const renderPayload = { format: 'svg', title: 'Spawn Failure', svgPath }
+    const upstream = ['[Workflow upstream results]', '[Upstream: 确定性渲染]', JSON.stringify(renderPayload)].join('\n')
+    const missingPython = join(outDir, 'no-such-python')
+    const result = runScriptNode(await figureNodeCode('fd-pptx'), upstream, {
+      RESEARCH_FIGURE_PPTX_PYTHON: missingPython,
+      RESEARCH_FIGURE_PPTX_SIDECAR: SIDE_CAR,
+    })
+    // Regression: a failed spawn fires both 'error' and 'close'; without the
+    // done-guard the node glued two JSON objects into stdout and the engine's
+    // JSON.parse of the node output blew up.
+    expect(() => JSON.parse(result.stdout)).not.toThrow()
+    const payload = JSON.parse(result.stdout) as Record<string, unknown>
+    expect(payload.pptxExported).toBe(false)
+    expect(String(payload.reason)).toContain('failed to spawn')
+    expect(String(payload.svgPath)).toBe(svgPath)
+    expect(existsSync(join(outDir, 'figure.pptx'))).toBe(false)
+  })
 })

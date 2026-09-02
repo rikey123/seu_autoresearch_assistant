@@ -786,6 +786,21 @@ process.stdin.on('end', function () {
     console.error('render node rejected the SVG document: <script> elements are not allowed in rendered figures');
     process.exit(1);
   }
+  // Inline event attributes: the leading \s anchor keeps prose like "press
+  // onward" safe — only a whitespace-delimited on* attribute followed by "="
+  // (e.g. onload=) matches.
+  if (/\son\w+\s*=/i.test(svg)) {
+    console.error('render node rejected the SVG document: inline event handler attributes (on*) are not allowed in rendered figures');
+    process.exit(1);
+  }
+  if (/javascript:/i.test(svg)) {
+    console.error('render node rejected the SVG document: javascript: URLs are not allowed in rendered figures');
+    process.exit(1);
+  }
+  if (/<(foreignObject|image|use)\b/i.test(svg)) {
+    console.error('render node rejected the SVG document: foreignObject, image, and use elements are not allowed in rendered figures');
+    process.exit(1);
+  }
   if (svg.length < 100) {
     console.error('render node rejected the SVG document: too small to be a real figure (' + svg.length + ' bytes)');
     process.exit(1);
@@ -820,7 +835,13 @@ process.stdin.on('end', function () {
   var fs = require('node:fs');
   var path = require('node:path');
   var cp = require('node:child_process');
+  // Exactly one settlement: a failed spawn emits both 'error' and 'close', and
+  // two finish() calls would glue two JSON objects into stdout and break the
+  // engine's JSON parsing of the node output.
+  var finished = false;
   function finish(payload) {
+    if (finished) return;
+    finished = true;
     process.stdout.write(JSON.stringify(payload));
   }
   var render = parseJsonPayload(stripEngineWrapperLines(rawInput));

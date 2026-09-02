@@ -262,12 +262,16 @@ export async function loadSkillPack(packId: string, options: { profile?: unknown
       const currentHash = await hashSkillDir(targetSkillDir)
       // An unchanged managed copy stays untouched even under force: content is
       // provably identical to the source. Force only overrides the refusal to
-      // clobber a copy the user modified after install.
+      // clobber a copy the user modified after install — regardless of whether
+      // the pack source moved on, so a user edit is never silently overwritten
+      // by an outdated-source check falling through (the status surface
+      // reports exactly this combined state as "modified", mirroring the
+      // unload guard below).
       if (currentHash === entry.installedHash && entry.sourceHash === sourceHash) {
         skipped.push(push('skipped', 'already installed and up to date'))
         continue
       }
-      if (currentHash !== entry.installedHash && entry.sourceHash === sourceHash && !force) {
+      if (currentHash !== entry.installedHash && !force) {
         skipped.push(push('skipped', 'installed copy was modified after install; pass force:true to overwrite'))
         continue
       }
