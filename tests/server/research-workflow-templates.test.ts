@@ -158,8 +158,8 @@ describe('research workflow template registry (HTTP)', () => {
     const overnight = await dispatch('GET', '/api/studio/research/workflows/templates/overnight-research')
     expect(overnight.status).toBe(200)
     expect(overnight.body.template).toMatchObject({ id: 'overnight-research', name: '过夜自主科研', profile: 'default' })
-    expect(overnight.body.template.nodes).toHaveLength(4)
-    expect(overnight.body.template.edges).toHaveLength(4)
+    expect(overnight.body.template.nodes).toHaveLength(5)
+    expect(overnight.body.template.edges).toHaveLength(6)
 
     const missing = await dispatch('GET', '/api/studio/research/workflows/templates/does-not-exist')
     expect(missing.status).toBe(404)
@@ -182,7 +182,7 @@ describe('research workflow template registry (HTTP)', () => {
       template: { id: 'overnight-research', name: '过夜自主科研' },
       valid: true,
       problems: [],
-      checked: { nodes: 4, edges: 4 },
+      checked: { nodes: 5, edges: 6 },
     })
 
     const missing = await dispatch('POST', '/api/studio/research/workflows/templates/does-not-exist/validate')
@@ -204,7 +204,7 @@ describe('research workflow template schema', () => {
     expect(templates.find(template => template.id === 'paper-translate')!.steps)
       .toEqual(['PDF 接入校验', 'pdf2zh 翻译', '双语对照', '术语表沉淀'])
     expect(templates.find(template => template.id === 'overnight-research')!.steps)
-      .toEqual(['队列接入', '批处理执行', '逐批聚合', '晨报报告'])
+      .toEqual(['队列接入', '批处理执行', '逐批聚合', '下一步建议', '晨报报告'])
     expect(templates.find(template => template.id === 'figure-drawing')!.steps)
       .toEqual(['绘图需求接入', 'SVG 绘图生成', '确定性渲染', 'pptx 导出（可选）'])
 
@@ -218,13 +218,16 @@ describe('research workflow template schema', () => {
     }
   })
 
-  it('wires overnight-research as a diamond join so aggregation sees the plan and the agent output', () => {
+  it('wires overnight-research as a diamond join plus a suggestion agent so the report sees ledger and suggestions', () => {
     const template = registeredTemplates().find(candidate => candidate.id === 'overnight-research')!
     const nodeIds = template.nodes.map(node => node.id)
-    expect(nodeIds).toEqual(['or-queue-intake', 'or-batch-executor', 'or-batch-aggregate', 'or-morning-report'])
+    expect(nodeIds).toEqual(['or-queue-intake', 'or-batch-executor', 'or-batch-aggregate', 'or-next-steps', 'or-morning-report'])
 
     // Exactly one entry node (the queue intake script) and one sink (the
-    // morning report script); the aggregation node joins two upstream edges.
+    // morning report script); the aggregation node joins two upstream edges,
+    // the next-steps agent sits between the join and the report, and the
+    // second diamond edge (aggregate -> report) hands the audited ledger to
+    // the report without passing it through the suggestion agent.
     const incoming = new Map<string, string[]>()
     for (const edge of template.edges) {
       incoming.set(edge.target, [...(incoming.get(edge.target) || []), edge.source])
@@ -233,11 +236,12 @@ describe('research workflow template schema', () => {
     expect(nodeIds.filter(id => !(template.edges.some(edge => edge.source === id)))).toEqual(['or-morning-report'])
     expect(incoming.get('or-batch-aggregate')!.sort()).toEqual(['or-batch-executor', 'or-queue-intake'])
     expect(incoming.get('or-batch-executor')).toEqual(['or-queue-intake'])
-    expect(incoming.get('or-morning-report')).toEqual(['or-batch-aggregate'])
+    expect(incoming.get('or-next-steps')).toEqual(['or-batch-aggregate'])
+    expect(incoming.get('or-morning-report')!.sort()).toEqual(['or-batch-aggregate', 'or-next-steps'])
 
-    // Only the batch execution step is an agent node; the queue, the join, and
-    // the report stay deterministic.
-    expect(template.nodes.filter(node => node.type === 'agent').map(node => node.id)).toEqual(['or-batch-executor'])
+    // Only batch execution and next-step suggestion are agent nodes; the queue,
+    // the join, and the report stay deterministic.
+    expect(template.nodes.filter(node => node.type === 'agent').map(node => node.id)).toEqual(['or-batch-executor', 'or-next-steps'])
     const aggregate = template.nodes.find(node => node.id === 'or-batch-aggregate')!
     expect(aggregate.data.orchestration.join).toBe('all')
     // The executor prompt demands machine-checkable per-item JSON lines so the
@@ -245,6 +249,19 @@ describe('research workflow template schema', () => {
     const executor = template.nodes.find(node => node.id === 'or-batch-executor')!
     expect(executor.data.input).toContain('"status": "success" 或 "failed"')
     expect(executor.data.input).toContain('必须覆盖计划中的每一个 id')
+    // The suggestions prompt demands machine-parseable one-JSON-line-per-
+    // suggestion output covering remediation, low completion rate, and
+    // parallelizable/automatable follow-ups.
+    const nextSteps = template.nodes.find(node => node.id === 'or-next-steps')!
+    expect(nextSteps.data.input).toContain('{"suggestion":')
+    expect(nextSteps.data.input).toContain('3-5 条可执行的下一步建议')
+    expect(nextSteps.data.input).toContain('失败项与缺失项的补救')
+    expect(nextSteps.data.input).toContain('完成率偏低时的处理')
+    expect(nextSteps.data.input).toContain('可并行或可自动化的后续动作')
+    // The morning report must consume the ledger and degrade gracefully.
+    const report = template.nodes.find(node => node.id === 'or-morning-report')!
+    expect(report.data.code).toContain('parseSuggestionLine')
+    expect(report.data.code).toContain('自动建议生成失败')
   })
 
   it('reports every problem in a broken template definition', () => {
