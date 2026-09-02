@@ -103,7 +103,7 @@ async function dispatch(method: string, path: string, overrides: Record<string, 
 function registeredTemplates(): ResearchWorkflowTemplate[] {
   // Fetched through the public get surface to keep the registry the
   // single source of truth for these assertions.
-  return ['literature-review', 'paper-translate', 'overnight-research'].map(id => {
+  return ['literature-review', 'paper-translate', 'overnight-research', 'figure-drawing'].map(id => {
     const template = getResearchWorkflowTemplate(id)
     expect(template, `template ${id} must be registered`).toBeTruthy()
     return template as ResearchWorkflowTemplate
@@ -135,7 +135,7 @@ describe('research workflow template registry (HTTP)', () => {
   it('lists all registered templates as summaries without leaking node payloads', async () => {
     const ctx = await dispatch('GET', '/api/studio/research/workflows/templates')
     expect(ctx.status).toBe(200)
-    expect(ctx.body.templates.map((template: any) => template.id)).toEqual(['literature-review', 'paper-translate', 'overnight-research'])
+    expect(ctx.body.templates.map((template: any) => template.id)).toEqual(['literature-review', 'paper-translate', 'overnight-research', 'figure-drawing'])
     for (const template of ctx.body.templates) {
       expect(template.nodeCount).toBeGreaterThan(0)
       // Linear templates use exactly nodeCount-1 edges; the overnight-research
@@ -205,6 +205,8 @@ describe('research workflow template schema', () => {
       .toEqual(['PDF 接入校验', 'pdf2zh 翻译', '双语对照', '术语表沉淀'])
     expect(templates.find(template => template.id === 'overnight-research')!.steps)
       .toEqual(['队列接入', '批处理执行', '逐批聚合', '晨报报告'])
+    expect(templates.find(template => template.id === 'figure-drawing')!.steps)
+      .toEqual(['绘图需求接入', 'SVG 绘图生成', '确定性渲染', 'pptx 导出（可选）'])
 
     for (const template of templates) {
       expect(template.steps).toEqual(template.nodes.map(node => node.data.title))

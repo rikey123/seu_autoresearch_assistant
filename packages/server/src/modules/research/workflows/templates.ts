@@ -649,6 +649,249 @@ process.stdin.on('end', function () {
   }));
 });`
 
+// Figure-drawing (scientific-illustrator loop, deterministic v1): a drawing
+// brief is validated into normalized JSON, one agent node produces a standalone
+// SVG document (conventions pinned by the bound "scientific-figure-style"
+// skill from the research skill pack), a script node renders figure.svg next
+// to the brief's outDir, and an optional gated script node exports the figure
+// elements into a .pptx through the python-pptx sidecar. The pptx stage
+// degrades gracefully (pptxExported:false + reason) when the sidecar is not
+// configured — figure.svg stays the primary artifact.
+const FD_INTAKE_CODE = String.raw`'use strict';
+${ENGINE_WRAPPER_HELPERS}var rawInput = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', function (chunk) { rawInput += chunk; });
+process.stdin.on('end', function () {
+  var fs = require('node:fs');
+  var path = require('node:path');
+  var text = stripEngineWrapperLines(rawInput);
+  if (!text) {
+    console.error('figure intake node received no input: pass JSON {"title":"...","outDir":"<absolute dir>","figureType":"bar","labels":[...],"data":[...]} or an absolute path to a brief JSON file');
+    process.exit(1);
+  }
+  var brief = parseJsonPayload(text);
+  if (!brief && path.isAbsolute(text.trim())) {
+    var briefPath = text.trim();
+    try {
+      brief = JSON.parse(fs.readFileSync(briefPath, 'utf8'));
+    } catch (error) {
+      console.error('failed to read brief file ' + briefPath + ': ' + error.message);
+      process.exit(1);
+    }
+  }
+  if (!brief || typeof brief !== 'object' || Array.isArray(brief)) {
+    console.error('figure intake node expects a drawing brief JSON object (inline or via absolute file path)');
+    process.exit(1);
+  }
+  function fail(message) {
+    console.error('invalid drawing brief: ' + message);
+    process.exit(1);
+  }
+  if (typeof brief.title !== 'string' || !brief.title.trim()) fail('title must be a non-empty string');
+  if (typeof brief.outDir !== 'string' || !brief.outDir.trim()) fail('outDir must be an absolute output directory path');
+  if (!path.isAbsolute(brief.outDir.trim())) fail('outDir must be an absolute path, received: ' + brief.outDir);
+  var figureType = typeof brief.figureType === 'string' && brief.figureType.trim() ? brief.figureType.trim().toLowerCase() : 'bar';
+  var allowedTypes = ['bar', 'line', 'scatter', 'pie', 'custom'];
+  if (allowedTypes.indexOf(figureType) === -1) fail('figureType must be one of ' + allowedTypes.join(', ') + ', received: ' + figureType);
+  var labels = brief.labels === undefined ? [] : brief.labels;
+  if (!Array.isArray(labels) || labels.some(function (label) { return typeof label !== 'string'; })) fail('labels must be an array of strings');
+  var data = brief.data === undefined ? [] : brief.data;
+  if (!Array.isArray(data) || data.some(function (value) { return typeof value !== 'number' || !isFinite(value); })) fail('data must be an array of finite numbers');
+  if (labels.length && data.length && labels.length !== data.length) fail('labels and data must have the same length');
+  var xLabel = typeof brief.xLabel === 'string' ? brief.xLabel : '';
+  var yLabel = typeof brief.yLabel === 'string' ? brief.yLabel : '';
+  var referencePath = null;
+  if (brief.referencePath !== undefined && brief.referencePath !== null) {
+    if (typeof brief.referencePath !== 'string' || !brief.referencePath.trim()) fail('referencePath must be a non-empty string when provided');
+    if (!path.isAbsolute(brief.referencePath.trim())) fail('referencePath must be an absolute path');
+    if (!fs.existsSync(brief.referencePath.trim())) fail('referencePath does not exist: ' + brief.referencePath);
+    referencePath = brief.referencePath.trim();
+  }
+  var notes = typeof brief.notes === 'string' ? brief.notes : '';
+  process.stdout.write(JSON.stringify({
+    title: brief.title.trim(),
+    figureType: figureType,
+    outDir: path.resolve(brief.outDir.trim()),
+    labels: labels,
+    data: data,
+    xLabel: xLabel,
+    yLabel: yLabel,
+    referencePath: referencePath,
+    notes: notes,
+    labelCount: labels.length,
+    dataCount: data.length,
+  }));
+});`
+
+const FD_RENDER_CODE = String.raw`'use strict';
+${ENGINE_WRAPPER_HELPERS}function splitUpstreamSections(text) {
+  var sections = [];
+  var current = null;
+  var lines = text.split(/\r?\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var header = line.match(/^\[Upstream: (.*?)\]\s*$/);
+    if (header) {
+      current = { title: header[1], lines: [] };
+      sections.push(current);
+      continue;
+    }
+    var trimmed = line.trim();
+    if (trimmed === '[Workflow upstream results]') continue;
+    if (trimmed === '[Current task]') break;
+    if (current) current.lines.push(line);
+  }
+  return sections;
+}
+function extractSvgDocument(text) {
+  var fence = String.fromCharCode(96, 96, 96);
+  var fencePattern = new RegExp(fence + '\\s*svg\\s*\\r?\\n([\\s\\S]*?)\\r?\\n\\s*' + fence, 'i');
+  var fenced = text.match(fencePattern);
+  var candidate = fenced ? fenced[1] : text;
+  var start = candidate.indexOf('<svg');
+  var end = candidate.lastIndexOf('</svg>');
+  if (start === -1 || end === -1 || end <= start) return null;
+  return candidate.slice(start, end + '</svg>'.length).trim();
+}
+var rawInput = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', function (chunk) { rawInput += chunk; });
+process.stdin.on('end', function () {
+  var fs = require('node:fs');
+  var path = require('node:path');
+  var sections = splitUpstreamSections(rawInput);
+  var brief = null;
+  var svg = null;
+  for (var i = 0; i < sections.length; i++) {
+    var sectionText = sections[i].lines.join('\n').trim();
+    if (!sectionText) continue;
+    if (!brief) {
+      var parsed = parseJsonPayload(sectionText);
+      if (parsed && typeof parsed.outDir === 'string') {
+        brief = parsed;
+        continue;
+      }
+    }
+    if (!svg) svg = extractSvgDocument(sectionText);
+  }
+  if (!brief || typeof brief.outDir !== 'string') {
+    console.error('render node could not find the drawing brief JSON (with outDir) from the intake node upstream');
+    process.exit(1);
+  }
+  if (!svg) {
+    console.error('render node could not find an SVG document in the upstream agent output; the drawing node must output exactly one ' + String.fromCharCode(96, 96, 96) + 'svg fenced block');
+    process.exit(1);
+  }
+  if (/<script/i.test(svg)) {
+    console.error('render node rejected the SVG document: <script> elements are not allowed in rendered figures');
+    process.exit(1);
+  }
+  if (svg.length < 100) {
+    console.error('render node rejected the SVG document: too small to be a real figure (' + svg.length + ' bytes)');
+    process.exit(1);
+  }
+  fs.mkdirSync(brief.outDir, { recursive: true });
+  var svgPath = path.join(brief.outDir, 'figure.svg');
+  fs.writeFileSync(svgPath, svg, 'utf8');
+  var width = (svg.match(/width\s*=\s*"(\d+(?:\.\d+)?)/) || [])[1] || null;
+  var height = (svg.match(/height\s*=\s*"(\d+(?:\.\d+)?)/) || [])[1] || null;
+  process.stdout.write(JSON.stringify({
+    format: 'svg',
+    title: brief.title,
+    figureType: brief.figureType,
+    svgPath: svgPath,
+    bytes: Buffer.byteLength(svg),
+    width: width === null ? null : Number(width),
+    height: height === null ? null : Number(height),
+  }));
+});`
+
+// Optional gated export: hands the rendered SVG to the python-pptx sidecar so
+// the figure lands as editable .pptx elements (scientific-illustrator v1
+// degradation: file export instead of desktop automation). The stage is
+// intentionally non-fatal — without RESEARCH_FIGURE_PPTX_PYTHON configured it
+// reports pptxExported:false with a reason and the run still completes with
+// figure.svg as the primary artifact.
+const FD_PPTX_CODE = String.raw`'use strict';
+${ENGINE_WRAPPER_HELPERS}var rawInput = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', function (chunk) { rawInput += chunk; });
+process.stdin.on('end', function () {
+  var fs = require('node:fs');
+  var path = require('node:path');
+  var cp = require('node:child_process');
+  function finish(payload) {
+    process.stdout.write(JSON.stringify(payload));
+  }
+  var render = parseJsonPayload(stripEngineWrapperLines(rawInput));
+  if (!render || typeof render.svgPath !== 'string' || !render.svgPath) {
+    console.error('pptx export node expects the render node JSON (svgPath) from its upstream');
+    process.exit(1);
+  }
+  if (!fs.existsSync(render.svgPath)) {
+    finish({ pptxExported: false, reason: 'rendered SVG is missing: ' + render.svgPath });
+    return;
+  }
+  var pythonBin = process.env.RESEARCH_FIGURE_PPTX_PYTHON || '';
+  if (!pythonBin) {
+    finish({
+      pptxExported: false,
+      reason: 'optional pptx export is not configured: set RESEARCH_FIGURE_PPTX_PYTHON to a Python interpreter with python-pptx installed (see the template optionalEnv docs); figure.svg remains the primary artifact',
+      svgPath: render.svgPath,
+    });
+    return;
+  }
+  var sidecarPath = process.env.RESEARCH_FIGURE_PPTX_SIDECAR || '';
+  if (!sidecarPath) {
+    finish({
+      pptxExported: false,
+      reason: 'optional pptx export is not fully configured: set RESEARCH_FIGURE_PPTX_SIDECAR to the absolute path of figure_svg_to_pptx.py (script nodes execute inside the run workspace, so a repo-relative default cannot be trusted); figure.svg remains the primary artifact',
+      svgPath: render.svgPath,
+    });
+    return;
+  }
+  if (!fs.existsSync(sidecarPath)) {
+    finish({ pptxExported: false, reason: 'python-pptx sidecar script not found at ' + sidecarPath, svgPath: render.svgPath });
+    return;
+  }
+  var pptxPath = path.join(path.dirname(render.svgPath), 'figure.pptx');
+  var args = [sidecarPath, render.svgPath, pptxPath, String(render.title || 'Scientific figure')];
+  // No cwd override: the default sidecar path resolves against the server
+  // process working directory, so the child must inherit it.
+  var child = cp.spawn(pythonBin, args, {
+    shell: false,
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  var stdoutText = '';
+  var stderrText = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', function (chunk) { stdoutText += chunk; });
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', function (chunk) { stderrText += chunk; });
+  process.on('exit', function () {
+    try { child.kill('SIGKILL'); } catch (error) {}
+  });
+  child.on('error', function (error) {
+    finish({ pptxExported: false, reason: 'failed to spawn the configured python interpreter "' + pythonBin + '": ' + error.message, svgPath: render.svgPath });
+  });
+  child.on('close', function (code) {
+    if (code === 0 && fs.existsSync(pptxPath)) {
+      finish({
+        pptxExported: true,
+        pptxPath: pptxPath,
+        bytes: fs.statSync(pptxPath).size,
+        sidecar: sidecarPath,
+        svgPath: render.svgPath,
+        title: String(render.title || 'Scientific figure'),
+      });
+      return;
+    }
+    var detail = (stderrText.trim() || stdoutText.trim() || 'no output').split('\n').slice(-3).join('\n');
+    finish({ pptxExported: false, reason: 'pptx sidecar exited with code ' + code + ': ' + detail, svgPath: render.svgPath });
+  });
+});`
+
 function nodePosition(index: number): { x: number; y: number } {
   return { x: 80 + index * 320, y: 120 }
 }
@@ -856,5 +1099,65 @@ const overnightResearch: ResearchWorkflowTemplate = {
   ],
 }
 
+// scientific-illustrator loop (DESIGN.md §3) made deterministic for v1: the
+// desktop-automation part degrades to file export. The agent node binds the
+// "scientific-figure-style" skill from the research skill pack, so the pack
+// must be loaded (POST /api/studio/research/skillpacks/nature-research/load)
+// before this template can run — the engine's skill preflight enforces it.
+const figureDrawing: ResearchWorkflowTemplate = {
+  id: 'figure-drawing',
+  name: '科研绘图',
+  description: '绘图 brief 接入校验 → agent 绑定科研绘图技能生成独立 SVG（绘制→检查→修正约定）→ 确定性渲染 figure.svg → 可选门控 pptx 导出（python-pptx sidecar，未配置时优雅降级）。',
+  profile: 'default',
+  steps: ['绘图需求接入', 'SVG 绘图生成', '确定性渲染', 'pptx 导出（可选）'],
+  optionalEnv: {
+    RESEARCH_FIGURE_PPTX_PYTHON: '用于 pptx 导出的 Python 解释器（需已安装 python-pptx）；未设置时跳过 pptx 导出，figure.svg 仍为主产物',
+    RESEARCH_FIGURE_PPTX_SIDECAR: 'figure_svg_to_pptx.py 的绝对路径（脚本节点在工作区目录内执行，必须用绝对路径）；未设置时跳过 pptx 导出',
+  },
+  nodes: [
+    scriptTemplateNode({
+      id: 'fd-intake',
+      title: '绘图需求接入',
+      position: nodePosition(0),
+      code: FD_INTAKE_CODE,
+    }),
+    agentTemplateNode({
+      id: 'fd-figure-agent',
+      title: 'SVG 绘图生成',
+      position: nodePosition(1),
+      skills: ['scientific-figure-style'],
+      input: [
+        '你是科研绘图助手。上游输入是绘图需求接入节点产出的规范化 brief JSON（title/figureType/outDir/labels/data/xLabel/yLabel/referencePath/notes）。',
+        '任务：根据 brief 生成一幅可直接渲染的独立 SVG 科研图。遵循已装载的 scientific-figure-style 技能中的绘制→检查→修正循环与 SVG 输出约定。',
+        '硬性要求：',
+        '1. 输出有且仅有一个 ```svg 围栏代码块，块内是完整独立 SVG（根元素带 width/height/viewBox，画布 900×560，白色背景 rect）。',
+        '2. 只允许 rect/circle/ellipse/line/polyline/polygon/path(简单折线)/text/g(平移) 图元；禁止 <script>、外部资源、动画。',
+        '3. figureType=bar：按 labels/data 画柱状图——柱高按数据线性换算为像素（先算比例再写坐标），每根柱配数据标签；figureType=line：画折线（polyline 或多段 line）并标注数据点；figureType=scatter：画圆点散点；figureType=custom：按 notes 与参考图描述画示意图（框+箭头，单一主流向）。',
+        '4. 标题、坐标轴（两条轴线 + 刻度）、轴标签（含单位）、图例齐全；文字用 text-anchor 防截断。',
+        '5. 色板用 Okabe-Ito（主色 #0072B2，强调 #D55E00）；同含义同色。',
+        '输出检查（在输出前自查并修正）：数据保真、文字完整、无元素越界、柱高与数值成比例。除 svg 围栏块外不得输出任何其他文字。',
+      ].join('\n'),
+    }),
+    scriptTemplateNode({
+      id: 'fd-render',
+      title: '确定性渲染',
+      position: nodePosition(2),
+      code: FD_RENDER_CODE,
+    }),
+    scriptTemplateNode({
+      id: 'fd-pptx',
+      title: 'pptx 导出（可选）',
+      position: nodePosition(3),
+      code: FD_PPTX_CODE,
+    }),
+  ],
+  edges: [
+    templateEdge('fd-e1', 'fd-intake', 'fd-figure-agent'),
+    templateEdge('fd-e2', 'fd-intake', 'fd-render'),
+    templateEdge('fd-e3', 'fd-figure-agent', 'fd-render'),
+    templateEdge('fd-e4', 'fd-render', 'fd-pptx'),
+  ],
+}
+
 /** Registered research workflow templates, keyed lookup by `id`. */
-export const RESEARCH_WORKFLOW_TEMPLATES: readonly ResearchWorkflowTemplate[] = [literatureReview, paperTranslate, overnightResearch]
+export const RESEARCH_WORKFLOW_TEMPLATES: readonly ResearchWorkflowTemplate[] = [literatureReview, paperTranslate, overnightResearch, figureDrawing]
