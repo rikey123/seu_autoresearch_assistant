@@ -103,7 +103,7 @@ async function dispatch(method: string, path: string, overrides: Record<string, 
 function registeredTemplates(): ResearchWorkflowTemplate[] {
   // Fetched through the public get surface to keep the registry the
   // single source of truth for these assertions.
-  return ['literature-review', 'paper-translate'].map(id => {
+  return ['literature-review', 'paper-translate', 'overnight-research'].map(id => {
     const template = getResearchWorkflowTemplate(id)
     expect(template, `template ${id} must be registered`).toBeTruthy()
     return template as ResearchWorkflowTemplate
@@ -132,13 +132,15 @@ describe('research workflow template registry (HTTP)', () => {
     expect(ctx.body).toEqual({ ok: true, subdomain: 'workflows' })
   })
 
-  it('lists both registered templates as summaries without leaking node payloads', async () => {
+  it('lists all registered templates as summaries without leaking node payloads', async () => {
     const ctx = await dispatch('GET', '/api/studio/research/workflows/templates')
     expect(ctx.status).toBe(200)
-    expect(ctx.body.templates.map((template: any) => template.id)).toEqual(['literature-review', 'paper-translate'])
+    expect(ctx.body.templates.map((template: any) => template.id)).toEqual(['literature-review', 'paper-translate', 'overnight-research'])
     for (const template of ctx.body.templates) {
       expect(template.nodeCount).toBeGreaterThan(0)
-      expect(template.edgeCount).toBe(template.nodeCount - 1)
+      // Linear templates use exactly nodeCount-1 edges; the overnight-research
+      // diamond adds one join edge on top of its spanning tree.
+      expect(template.edgeCount).toBeGreaterThanOrEqual(template.nodeCount - 1)
       expect(Object.keys(template)).not.toContain('nodes')
       expect(Object.keys(template)).not.toContain('edges')
     }
@@ -153,6 +155,12 @@ describe('research workflow template registry (HTTP)', () => {
     expect(ctx.body.template.nodes).toHaveLength(6)
     expect(ctx.body.template.edges).toHaveLength(5)
 
+    const overnight = await dispatch('GET', '/api/studio/research/workflows/templates/overnight-research')
+    expect(overnight.status).toBe(200)
+    expect(overnight.body.template).toMatchObject({ id: 'overnight-research', name: '过夜自主科研', profile: 'default' })
+    expect(overnight.body.template.nodes).toHaveLength(4)
+    expect(overnight.body.template.edges).toHaveLength(4)
+
     const missing = await dispatch('GET', '/api/studio/research/workflows/templates/does-not-exist')
     expect(missing.status).toBe(404)
     expect(missing.body).toEqual({ error: 'workflow template not found' })
@@ -166,6 +174,15 @@ describe('research workflow template registry (HTTP)', () => {
       valid: true,
       problems: [],
       checked: { nodes: 4, edges: 3 },
+    })
+
+    const overnight = await dispatch('POST', '/api/studio/research/workflows/templates/overnight-research/validate')
+    expect(overnight.status).toBe(200)
+    expect(overnight.body).toMatchObject({
+      template: { id: 'overnight-research', name: '过夜自主科研' },
+      valid: true,
+      problems: [],
+      checked: { nodes: 4, edges: 4 },
     })
 
     const missing = await dispatch('POST', '/api/studio/research/workflows/templates/does-not-exist/validate')
@@ -186,6 +203,8 @@ describe('research workflow template schema', () => {
       .toEqual(['文献检索', '文献筛选', '精读', '综述初稿', '引用核查', 'HTML 报告'])
     expect(templates.find(template => template.id === 'paper-translate')!.steps)
       .toEqual(['PDF 接入校验', 'pdf2zh 翻译', '双语对照', '术语表沉淀'])
+    expect(templates.find(template => template.id === 'overnight-research')!.steps)
+      .toEqual(['队列接入', '批处理执行', '逐批聚合', '晨报报告'])
 
     for (const template of templates) {
       expect(template.steps).toEqual(template.nodes.map(node => node.data.title))
@@ -195,6 +214,35 @@ describe('research workflow template schema', () => {
         expect(Number.isFinite(node.position.y)).toBe(true)
       }
     }
+  })
+
+  it('wires overnight-research as a diamond join so aggregation sees the plan and the agent output', () => {
+    const template = registeredTemplates().find(candidate => candidate.id === 'overnight-research')!
+    const nodeIds = template.nodes.map(node => node.id)
+    expect(nodeIds).toEqual(['or-queue-intake', 'or-batch-executor', 'or-batch-aggregate', 'or-morning-report'])
+
+    // Exactly one entry node (the queue intake script) and one sink (the
+    // morning report script); the aggregation node joins two upstream edges.
+    const incoming = new Map<string, string[]>()
+    for (const edge of template.edges) {
+      incoming.set(edge.target, [...(incoming.get(edge.target) || []), edge.source])
+    }
+    expect(nodeIds.filter(id => !incoming.has(id))).toEqual(['or-queue-intake'])
+    expect(nodeIds.filter(id => !(template.edges.some(edge => edge.source === id)))).toEqual(['or-morning-report'])
+    expect(incoming.get('or-batch-aggregate')!.sort()).toEqual(['or-batch-executor', 'or-queue-intake'])
+    expect(incoming.get('or-batch-executor')).toEqual(['or-queue-intake'])
+    expect(incoming.get('or-morning-report')).toEqual(['or-batch-aggregate'])
+
+    // Only the batch execution step is an agent node; the queue, the join, and
+    // the report stay deterministic.
+    expect(template.nodes.filter(node => node.type === 'agent').map(node => node.id)).toEqual(['or-batch-executor'])
+    const aggregate = template.nodes.find(node => node.id === 'or-batch-aggregate')!
+    expect(aggregate.data.orchestration.join).toBe('all')
+    // The executor prompt demands machine-checkable per-item JSON lines so the
+    // aggregation stays deterministic regardless of the configured runtime.
+    const executor = template.nodes.find(node => node.id === 'or-batch-executor')!
+    expect(executor.data.input).toContain('"status": "success" 或 "failed"')
+    expect(executor.data.input).toContain('必须覆盖计划中的每一个 id')
   })
 
   it('reports every problem in a broken template definition', () => {
