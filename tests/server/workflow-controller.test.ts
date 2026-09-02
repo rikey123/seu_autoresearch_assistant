@@ -300,6 +300,33 @@ describe('workflow controller', () => {
     }) })
   })
 
+  it('passes the node session output_json through the run detail contract as a string', async () => {
+    managerMock.get.mockReturnValue({ id: 'workflow-1', profile: 'default', nodes: [], edges: [] })
+    // Deterministic nodes store last output in output_json (populated or empty);
+    // agent nodes always carry the empty string. The client type declares a
+    // string that may be empty, so the API must never mask or coerce it.
+    getWorkflowRunWithEvidenceMock.mockReturnValue({
+      id: 'run-1', workflow_id: 'workflow-1', status: 'completed',
+      node_sessions: [
+        { id: 'node-session-1', node_id: 'script-1', session_id: '', status: 'completed', output_json: '{"score":0.94}' },
+        { id: 'node-session-2', node_id: 'agent-1', session_id: 'sess-1', status: 'completed', output_json: '' },
+      ],
+      edge_evaluations: [],
+      loop_epochs: [],
+    })
+    const mod = await import('../../packages/server/src/modules/studio/controllers/workflows')
+    const c = ctx({ params: { id: 'workflow-1', runId: 'run-1' } })
+    await mod.getRun(c)
+    expect(c.body.run.node_sessions).toEqual([
+      { id: 'node-session-1', node_id: 'script-1', session_id: '', status: 'completed', output_json: '{"score":0.94}' },
+      { id: 'node-session-2', node_id: 'agent-1', session_id: 'sess-1', status: 'completed', output_json: '' },
+    ])
+    for (const session of c.body.run.node_sessions) {
+      expect(typeof session.output_json).toBe('string')
+      expect(['', '{"score":0.94}']).toContain(session.output_json)
+    }
+  })
+
   it('stops a workflow run through the workflow manager', async () => {
     managerMock.get.mockReturnValue({ id: 'workflow-1', profile: 'default', nodes: [], edges: [] })
     managerMock.stopRun.mockResolvedValue({ id: 'run-1', workflow_id: 'workflow-1', status: 'canceled' })
