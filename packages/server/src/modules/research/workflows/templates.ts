@@ -917,9 +917,13 @@ process.stdin.on('end', function () {
 
 // Optional gated export: hands the rendered SVG to the python-pptx sidecar so
 // the figure lands as editable .pptx elements (scientific-illustrator v1
-// degradation: file export instead of desktop automation). The stage is
-// intentionally non-fatal — without RESEARCH_FIGURE_PPTX_PYTHON configured it
-// reports pptxExported:false with a reason and the run still completes with
+// degradation: file export instead of desktop automation). Mapping v2 covers
+// path beziers (freeform), rotate transforms, gradient fills (representative
+// solid color), and text tspans (runs/paragraphs); the sidecar reports
+// svgFeaturesMapped / svgFeaturesSkipped counters on stdout, which this node
+// forwards additively on success — the stdout contract only grows. The stage
+// is intentionally non-fatal — without RESEARCH_FIGURE_PPTX_PYTHON configured
+// it reports pptxExported:false with a reason and the run still completes with
 // figure.svg as the primary artifact.
 const FD_PPTX_CODE = String.raw`'use strict';
 ${ENGINE_WRAPPER_HELPERS}var rawInput = '';
@@ -992,14 +996,24 @@ process.stdin.on('end', function () {
   });
   child.on('close', function (code) {
     if (code === 0 && fs.existsSync(pptxPath)) {
-      finish({
+      var payload = {
         pptxExported: true,
         pptxPath: pptxPath,
         bytes: fs.statSync(pptxPath).size,
         sidecar: sidecarPath,
         svgPath: render.svgPath,
         title: String(render.title || 'Scientific figure'),
-      });
+      };
+      // Forward the sidecar's v2 feature counters when the sidecar reported
+      // them. Additive keys only: every v1 key above keeps its name and
+      // semantics, and an old sidecar without counters still succeeds.
+      var summaryLine = stdoutText.trim().split('\n').filter(function (line) { return line.trim(); }).pop() || '';
+      try {
+        var summary = JSON.parse(summaryLine);
+        if (summary && summary.svgFeaturesMapped) payload.svgFeaturesMapped = summary.svgFeaturesMapped;
+        if (summary && summary.svgFeaturesSkipped) payload.svgFeaturesSkipped = summary.svgFeaturesSkipped;
+      } catch (error) {}
+      finish(payload);
       return;
     }
     var detail = (stderrText.trim() || stdoutText.trim() || 'no output').split('\n').slice(-3).join('\n');
@@ -1250,7 +1264,7 @@ const figureDrawing: ResearchWorkflowTemplate = {
   profile: 'default',
   steps: ['绘图需求接入', 'SVG 绘图生成', '确定性渲染', 'pptx 导出（可选）'],
   optionalEnv: {
-    RESEARCH_FIGURE_PPTX_PYTHON: '用于 pptx 导出的 Python 解释器（需已安装 python-pptx）；未设置时跳过 pptx 导出，figure.svg 仍为主产物',
+    RESEARCH_FIGURE_PPTX_PYTHON: '用于 pptx 导出的 Python 解释器（需已安装 python-pptx）；未设置时跳过 pptx 导出，figure.svg 仍为主产物。导出为映射 v2：path(M/L/H/V/C/S/Q/T/Z，A 弧折线近似)、rotate 变换、渐变填充（代表纯色）、text+tspan（run/段落）均映射为原生可编辑形状，节点输出附 svgFeaturesMapped/svgFeaturesSkipped 计数',
     RESEARCH_FIGURE_PPTX_SIDECAR: 'figure_svg_to_pptx.py 的绝对路径（脚本节点在工作区目录内执行，必须用绝对路径）；未设置时跳过 pptx 导出',
   },
   nodes: [
