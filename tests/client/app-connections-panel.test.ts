@@ -4,11 +4,11 @@ import { describe, expect, it } from 'vitest'
 const source = readFileSync(
   'packages/client/src/components/hermes/connections/AppConnectionsPanel.vue',
   'utf8',
-)
+).replace(/\r\n/g, '\n')
 const controllerSource = readFileSync(
   'packages/server/src/modules/studio/controllers/app-connections.ts',
   'utf8',
-)
+).replace(/\r\n/g, '\n')
 
 describe('App connections scan modal', () => {
   it('switches between the connection list, mobile download hub, and message push', () => {

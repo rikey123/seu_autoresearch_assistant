@@ -1532,7 +1532,11 @@ export default {
       stopFailed: 'تعذّر إيقاف التشغيل',
       delete: 'حذف السجل',
       deleteSuccess: 'تم حذف سجل التشغيل',
-    },
+          notificationTitle: 'انتهى تشغيل «{name}»',
+      notificationCompleted: 'اكتمل التشغيل بنجاح.',
+      notificationFailed: 'فشل التشغيل. افتح التشغيل لفحص أخطاء العقد.',
+      notificationCanceled: 'تم إلغاء التشغيل.',
+},
     inspector: {
       selected: 'العقدة المحددة',
       none: 'لم تُحدد أي عقدة',

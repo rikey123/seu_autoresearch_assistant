@@ -2814,7 +2814,11 @@ export default {
     runs: {
       title: '실행 기록', refresh: '새로 고침', empty: '실행 기록 없음', startNodes: '시작 노드 {count}개', snapshotIndicator: '이 실행이 시작된 시점의 고정 스냅샷', show: '실행 기록 표시', hide: '실행 기록 숨기기',
       nodeSessionTitle: '노드 세션 - {node}', noNodeSession: '이 노드에는 아직 세션 기록이 없습니다', loadNodeSessionFailed: '노드 세션을 불러오지 못했습니다', stop: '실행 중지', stopRequested: '중지를 요청했습니다', stopFailed: '실행을 중지하지 못했습니다', delete: '기록 삭제', deleteSuccess: '실행 기록을 삭제했습니다',
-    },
+          notificationTitle: '워크플로우 “{name}” 실행 종료',
+      notificationCompleted: '실행이 성공적으로 완료됐습니다.',
+      notificationFailed: '실행에 실패했습니다. 실행을 열어 노드 오류를 확인하세요.',
+      notificationCanceled: '실행이 취소됐습니다.',
+},
     inspector: { selected: '선택한 노드', none: '선택한 노드 없음' },
     agents: { planner: '계획 담당', researcher: '조사 담당', builder: '구현 담당', reviewer: '검토 담당' },
     models: { default: '기본 모델', fast: '빠른 모델', reasoning: '추론 모델' },
