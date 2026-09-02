@@ -89,6 +89,8 @@ export interface WorkflowTemplateAgentNodeInput {
   agent?: (typeof WORKFLOW_TEMPLATE_AGENTS)[number]
   join?: 'all' | 'any'
   position: { x: number; y: number }
+  /** Skill names resolved through the engine's workflow skill binding. */
+  skills?: string[]
 }
 
 export interface WorkflowTemplateScriptNodeInput {
@@ -115,7 +117,7 @@ export function agentTemplateNode(args: WorkflowTemplateAgentNodeInput): Workflo
       apiMode: '',
       reasoningEffort: 'default',
       input: args.input,
-      skills: [],
+      skills: args.skills ? [...args.skills] : [],
       images: [],
       approvalRequired: false,
       orchestration: { join: args.join || 'all' },
