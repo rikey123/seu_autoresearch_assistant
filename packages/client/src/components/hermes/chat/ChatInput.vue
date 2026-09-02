@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Attachment } from '@/stores/hermes/chat'
 import { useChatStore } from '@/stores/hermes/chat'
+import { useChatKnowledgeStore } from '@/stores/research/chat-knowledge'
+import type { RagCollection } from '@/api/studio/research-knowledge'
 import { useAppStore } from '@/stores/hermes/app'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { useSettingsStore } from '@/stores/hermes/settings'
@@ -231,6 +233,101 @@ const isBridgeSession = computed(() => {
   if (!session) return chatStore.runtimeMode !== 'global_agent'
   return session.source === 'cli'
 })
+
+// --- Knowledge base @ mention (@知识库) ---
+// Typing "@" opens a knowledge base picker; picking one arms the current chat
+// session so sends go to the RAG ask pipeline instead of the agent run.
+const chatKnowledgeStore = useChatKnowledgeStore()
+const kbMentionActive = ref(false)
+const kbMentionQuery = ref('')
+const kbMentionStartIndex = ref(-1)
+const kbMentionActiveIndex = ref(0)
+const kbDropdownRef = ref<HTMLDivElement>()
+
+const activeKbSelection = computed(() => chatKnowledgeStore.selectionFor(chatStore.activeSessionId))
+
+const filteredKbCollections = computed<RagCollection[]>(() => {
+  const query = kbMentionQuery.value.trim().toLowerCase()
+  const collections = chatKnowledgeStore.selectableCollections
+  if (!query) return collections
+  return collections.filter(collection =>
+    collection.name.toLowerCase().includes(query)
+    || collection.description.toLowerCase().includes(query),
+  )
+})
+
+const kbMentionVisible = computed(() =>
+  kbMentionActive.value
+  && (chatKnowledgeStore.collectionsLoading || filteredKbCollections.value.length > 0),
+)
+
+function updateKbMentionState() {
+  const el = textareaRef.value
+  if (!el) {
+    kbMentionActive.value = false
+    return
+  }
+  const text = inputText.value
+  const cursorPos = el.selectionStart
+  let atPos = -1
+  for (let i = cursorPos - 1; i >= 0; i--) {
+    if (text[i] === '@') {
+      atPos = i
+      break
+    }
+    if (text[i] === ' ' || text[i] === '\n') break
+  }
+  // The @ must start a token; CJK/punctuation before it are fine delimiters.
+  if (atPos === -1 || (atPos > 0 && /\w/.test(text[atPos - 1]))) {
+    kbMentionActive.value = false
+    return
+  }
+  const query = text.slice(atPos + 1, cursorPos)
+  if (query.includes(' ')) {
+    kbMentionActive.value = false
+    return
+  }
+  kbMentionQuery.value = query
+  kbMentionStartIndex.value = atPos
+  kbMentionActiveIndex.value = 0
+  void chatKnowledgeStore.ensureCollections()
+  kbMentionActive.value = true
+}
+
+function scrollKbMentionIntoView() {
+  nextTick(() => {
+    if (!kbDropdownRef.value) return
+    const active = kbDropdownRef.value.querySelector('.active') as HTMLElement | null
+    active?.scrollIntoView({ block: 'nearest', behavior: 'instant' })
+  })
+}
+
+function selectKbCollection(collection: RagCollection) {
+  const sessionId = chatStore.activeSessionId
+  if (!sessionId) return
+  chatKnowledgeStore.selectForSession(sessionId, collection.id)
+  const el = textareaRef.value
+  if (el && kbMentionStartIndex.value >= 0) {
+    const cursorPos = el.selectionStart
+    inputText.value = inputText.value.slice(0, kbMentionStartIndex.value) + inputText.value.slice(cursorPos)
+    nextTick(() => {
+      el.setSelectionRange(kbMentionStartIndex.value, kbMentionStartIndex.value)
+      el.focus()
+    })
+  }
+  kbMentionActive.value = false
+}
+
+function clearKbSelection() {
+  const sessionId = chatStore.activeSessionId
+  if (sessionId) chatKnowledgeStore.selectForSession(sessionId, null)
+  textareaRef.value?.focus()
+}
+
+function kbStatusLabel(status: string): string {
+  return t(`research.rag.status.${status}`)
+}
+
 const isCodingAgentSession = computed(() => {
   const session = chatStore.activeSession
   return !!session && (
@@ -566,6 +663,7 @@ watch(inputText, (value) => {
 watch(() => chatStore.activeSession?.id, () => {
   if (props.persistDraft) loadDraftForActiveSession()
   else inputText.value = props.initialText
+  kbMentionActive.value = false
   nextTick(() => {
     applyConfiguredTextareaHeight()
   })
@@ -1001,11 +1099,20 @@ async function handleSend() {
     return
   }
 
-  chatStore.sendMessage(text, attachments.value.length > 0 ? attachments.value : undefined)
+  // Knowledge base ask path: text-only messages in a KB-armed session go to
+  // the RAG pipeline. Messages carrying attachments keep the regular send so
+  // uploads are never silently dropped.
+  const kbSelection = activeKbSelection.value
+  if (kbSelection && attachments.value.length === 0 && !text.startsWith('/')) {
+    chatStore.sendKnowledgeBaseMessage(kbSelection, text)
+  } else {
+    chatStore.sendMessage(text, attachments.value.length > 0 ? attachments.value : undefined)
+  }
   inputText.value = ''
   saveDraftForActiveSession('')
   attachments.value = []
   slashActive.value = false
+  kbMentionActive.value = false
 
   if (textareaRef.value) {
     textareaRef.value.style.height = 'auto'
@@ -1028,6 +1135,31 @@ function isImeEnter(e: KeyboardEvent): boolean {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  if (kbMentionVisible.value && filteredKbCollections.value.length > 0) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      kbMentionActiveIndex.value = (kbMentionActiveIndex.value + 1) % filteredKbCollections.value.length
+      scrollKbMentionIntoView()
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      kbMentionActiveIndex.value = (kbMentionActiveIndex.value - 1 + filteredKbCollections.value.length) % filteredKbCollections.value.length
+      scrollKbMentionIntoView()
+      return
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      selectKbCollection(filteredKbCollections.value[kbMentionActiveIndex.value])
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      kbMentionActive.value = false
+      return
+    }
+  }
+
   if (slashActive.value && filteredBridgeCommands.value.length > 0) {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
@@ -1062,7 +1194,10 @@ function handleKeydown(e: KeyboardEvent) {
 
 function handleInput(e: Event) {
   const el = e.target as HTMLTextAreaElement
-  if (!isComposing.value) updateSlashState()
+  if (!isComposing.value) {
+    updateSlashState()
+    updateKbMentionState()
+  }
   // 用户手动拖拽自定义高度时，不覆盖
   if (textareaHeight.value !== null) return
   autoSizeTextarea(el)
@@ -1073,10 +1208,12 @@ function handleCommandHover(index: number) {
 }
 
 function onDocumentMousedown(e: MouseEvent) {
-  if (!slashActive.value) return
   const target = e.target as HTMLElement
-  if (!target.closest('.slash-command-dropdown') && !target.closest('.input-wrapper')) {
+  if (slashActive.value && !target.closest('.slash-command-dropdown') && !target.closest('.input-wrapper')) {
     slashActive.value = false
+  }
+  if (kbMentionActive.value && !target.closest('.kb-mention-dropdown') && !target.closest('.input-wrapper')) {
+    kbMentionActive.value = false
   }
 }
 
@@ -1148,6 +1285,28 @@ function isImage(type: string): boolean {
         :aria-label="t('chat.cancelReference')"
         :title="t('chat.cancelReference')"
         @click.stop="clearMessageReference"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+
+    <div v-if="activeKbSelection" class="kb-selection-chip" data-testid="kb-selection-chip">
+      <svg class="kb-selection-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+      </svg>
+      <span class="kb-selection-hint">{{ t('research.rag.chatSelectedHint') }}</span>
+      <span class="kb-selection-name" :title="activeKbSelection.name">{{ activeKbSelection.name }}</span>
+      <span class="kb-selection-status">{{ kbStatusLabel(activeKbSelection.index_status) }}</span>
+      <button
+        type="button"
+        class="kb-selection-remove"
+        :aria-label="t('research.rag.chatClearSelection')"
+        :title="t('research.rag.chatClearSelection')"
+        @click.stop="clearKbSelection"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18" />
@@ -1408,6 +1567,31 @@ function isImage(type: string): boolean {
             <span class="slash-command-name">/{{ command.name }}</span>
             <span v-if="command.args" class="slash-command-args">{{ command.args }}</span>
             <span class="slash-command-desc">{{ command.description }}</span>
+          </div>
+        </div>
+      </Transition>
+      <Transition name="dropdown-fade">
+        <div
+          v-if="kbMentionVisible"
+          ref="kbDropdownRef"
+          class="slash-command-dropdown kb-mention-dropdown"
+          data-testid="kb-mention-dropdown"
+        >
+          <div v-if="chatKnowledgeStore.collectionsLoading && filteredKbCollections.length === 0" class="kb-mention-empty">
+            {{ t('common.loading') }}
+          </div>
+          <div
+            v-for="(collection, i) in filteredKbCollections"
+            :key="collection.id"
+            class="slash-command-item kb-mention-item"
+            :class="{ active: i === kbMentionActiveIndex }"
+            :data-kb-id="collection.id"
+            @mousedown.prevent="selectKbCollection(collection)"
+            @mouseenter="kbMentionActiveIndex = i"
+          >
+            <span class="slash-command-name kb-mention-name" :title="collection.name">{{ collection.name }}</span>
+            <span class="slash-command-args">{{ kbStatusLabel(collection.index_status) }}</span>
+            <span class="slash-command-desc">{{ t('research.rag.paperCount', { count: collection.paper_count ?? 0 }) }}</span>
           </div>
         </div>
       </Transition>
@@ -2220,6 +2404,81 @@ function isImage(type: string): boolean {
   border-radius: 8px;
   background: rgba(var(--accent-primary-rgb), 0.07);
   cursor: default;
+}
+
+.kb-selection-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin: 0 8px 8px;
+  padding: 4px 8px;
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.35);
+  border-radius: 8px;
+  background: rgba(var(--accent-primary-rgb), 0.07);
+  cursor: default;
+}
+
+.kb-selection-icon {
+  flex-shrink: 0;
+  color: $accent-primary;
+}
+
+.kb-selection-hint {
+  flex-shrink: 0;
+  color: $text-secondary;
+  font-size: 12px;
+}
+
+.kb-selection-name {
+  min-width: 0;
+  overflow: hidden;
+  color: $text-primary;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-selection-status {
+  flex-shrink: 0;
+  color: $accent-primary;
+  font-size: 11px;
+}
+
+.kb-selection-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: $text-muted;
+  cursor: pointer;
+
+  &:hover {
+    color: $text-primary;
+    background: rgba(var(--text-primary-rgb), 0.08);
+  }
+}
+
+.kb-mention-dropdown {
+  .kb-mention-name {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.kb-mention-empty {
+  padding: 14px 10px;
+  color: $text-muted;
+  font-size: 13px;
+  text-align: center;
 }
 
 .message-reference-text {

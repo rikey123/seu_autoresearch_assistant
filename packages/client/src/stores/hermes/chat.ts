@@ -3,6 +3,8 @@ import { archiveSession as archiveSessionApi, deleteSession as deleteSessionApi,
 import { getActiveProfileName } from '@/api/client'
 import { inferCodingAgentApiMode, normalizeCodingAgentApiMode, type ChatCodingAgentId } from '@/api/coding-agents'
 import { getDownloadUrl } from '@/api/studio/download'
+import { askQuestion, getQuestion, type RagCitation } from '@/api/studio/research-knowledge'
+import { listPapers } from '@/api/studio/research-library'
 import type { ProviderApiMode } from '@/api/studio/provider-api-mode'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
@@ -97,6 +99,20 @@ export interface Message {
   runMarker?: string | null
   toolRunId?: string
   toolMessages?: Message[]
+  /** Citation traceability for a knowledge-base answer (paperId + page + snippet + resolved title). */
+  ragCitations?: RagCitationWithPaper[]
+  /** Raw error detail of a failed knowledge-base ask; presence renders a localized in-chat error. */
+  ragAskError?: string
+  /** Marks a knowledge-base ask that hit the polling deadline without a terminal record. */
+  ragAskTimeout?: boolean
+}
+
+/** A RAG citation enriched with the library paper title when it could be resolved. */
+export interface RagCitationWithPaper {
+  paperId: string
+  page: number | null
+  snippet: string
+  title?: string
 }
 
 export type SubagentStreamStatus =
@@ -5135,6 +5151,106 @@ export const useChatStore = defineStore('chat', () => {
   onSessionWorkspaceUpdated(applySessionWorkspaceUpdate)
   onSessionSettingsUpdated(applySessionSettingsUpdate)
 
+  // ─── Knowledge base chat orchestration (@知识库) ────────────────────────
+  //
+  // Pure client-side orchestration on top of the T4.1 RAG HTTP API: the user
+  // message is appended locally, the question is enqueued through the existing
+  // /api/studio/research/rag/collections/:id/ask endpoint, and the cited
+  // answer is posted back as an assistant-side message. No agent run is
+  // started, so sessions without a knowledge base selection are untouched.
+
+  const RAG_ASK_POLL_INTERVAL_MS = 500
+  // Matches the sidecar's own 10 minute timeout plus queue slack.
+  const RAG_ASK_POLL_TIMEOUT_MS = 15 * 60 * 1000
+
+  function delayMs(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms))
+  }
+
+  /** Citation titles are best-effort; unresolved citations render the paper id. */
+  async function resolveCitationTitles(citations: RagCitation[]): Promise<Map<string, string>> {
+    const titles = new Map<string, string>()
+    if (citations.length === 0) return titles
+    try {
+      for (const paper of await listPapers()) {
+        if (paper.title) titles.set(paper.id, paper.title)
+      }
+    } catch {
+      // keep empty
+    }
+    return titles
+  }
+
+  async function sendKnowledgeBaseMessage(collection: { id: string; name: string }, content: string) {
+    const trimmed = content.trim()
+    if (!trimmed) return
+
+    if (!activeSession.value) {
+      const session = createSession()
+      switchSession(session.id)
+    }
+    const sid = activeSessionId.value!
+    addMessage(sid, {
+      id: uid(),
+      role: 'user',
+      content: trimmed,
+      timestamp: Date.now(),
+    })
+    updateSessionTitle(sid)
+
+    // Assistant-side placeholder renders as a loading state until the answer
+    // or the in-chat error arrives.
+    const answerId = uid()
+    addMessage(sid, {
+      id: answerId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      isStreaming: true,
+    })
+
+    const failAsk = (detail: string, timeout = false) => {
+      updateMessage(sid, answerId, {
+        isStreaming: false,
+        systemType: 'error',
+        content: '',
+        ragAskError: timeout ? undefined : detail,
+        ragAskTimeout: timeout || undefined,
+      })
+    }
+
+    try {
+      const submitted = await askQuestion(collection.id, trimmed)
+      const deadline = Date.now() + RAG_ASK_POLL_TIMEOUT_MS
+      let record = submitted
+      while (record.status !== 'answered' && record.status !== 'failed') {
+        if (Date.now() > deadline) {
+          failAsk('', true)
+          return
+        }
+        await delayMs(RAG_ASK_POLL_INTERVAL_MS)
+        record = await getQuestion(submitted.id)
+      }
+      if (record.status !== 'answered' || !(record.answer || '').trim()) {
+        failAsk(record.error || '')
+        return
+      }
+      const titles = await resolveCitationTitles(record.citations)
+      updateMessage(sid, answerId, {
+        isStreaming: false,
+        content: record.answer || '',
+        ragCitations: record.citations.map(citation => ({
+          paperId: citation.paperId,
+          page: citation.page,
+          snippet: citation.snippet,
+          title: titles.get(citation.paperId),
+        })),
+      })
+    } catch (error) {
+      failAsk((error as { message?: string } | null)?.message || '')
+    }
+  }
+
   function stopStreaming() {
     const sid = activeSessionId.value
     if (!sid) return
@@ -5413,6 +5529,7 @@ export const useChatStore = defineStore('chat', () => {
     deleteSession,
     archiveSession,
     sendMessage,
+    sendKnowledgeBaseMessage,
     stopStreaming,
     respondApproval,
     respondApprovalFor,

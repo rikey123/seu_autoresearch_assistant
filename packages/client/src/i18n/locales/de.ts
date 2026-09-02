@@ -537,6 +537,11 @@ export default {
       questionPending: 'Warte auf die Antwort…',
       citationPage: 'S. {page}',
       citationPageMissing: 'Seite unbekannt',
+      chatSelectedHint: 'Antwort basiert auf der Wissensbasis',
+      chatClearSelection: 'Diese Wissensbasis nicht mehr verwenden',
+      chatCitationsTitle: 'Quellen',
+      chatAskFailed: 'Die Wissensbasis-Frage ist fehlgeschlagen.',
+      chatAskTimeout: 'Die Antwort der Wissensbasis hat das Zeitlimit überschritten.',
     },
   },
 

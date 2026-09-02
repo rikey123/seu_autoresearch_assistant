@@ -525,6 +525,11 @@ export default {
       questionPending: 'في انتظار الإجابة…',
       citationPage: 'ص. {page}',
       citationPageMissing: 'الصفحة غير متوفرة',
+      chatSelectedHint: 'الإجابة من قاعدة المعرفة',
+      chatClearSelection: 'إيقاف استخدام قاعدة المعرفة هذه',
+      chatCitationsTitle: 'المراجع',
+      chatAskFailed: 'فشل سؤال قاعدة المعرفة.',
+      chatAskTimeout: 'انتهت مهلة الإجابة من قاعدة المعرفة.',
     },
   },
 

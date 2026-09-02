@@ -4,9 +4,11 @@ import {
   parseMessageReference,
   type Message,
   type ContentBlock,
+  type RagCitationWithPaper,
 } from "@/stores/hermes/chat";
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 import { useMessage } from "naive-ui";
 import { downloadFile, getDownloadUrl } from "@/api/studio/download";
 import { copyToClipboard } from "@/utils/clipboard";
@@ -61,6 +63,26 @@ const toast = useMessage();
 
 const isSystem = computed(() => props.message.role === "system");
 const isAgentError = computed(() => props.message.role === "assistant" && props.message.systemType === "error");
+
+// Knowledge base answer enrichment: citation traceability list and the
+// localized in-chat error for a failed RAG ask.
+const router = useRouter();
+const ragCitations = computed<RagCitationWithPaper[]>(() => props.message.ragCitations ?? []);
+const ragAskFailed = computed(() =>
+  props.message.role === "assistant"
+  && (props.message.ragAskError != null || props.message.ragAskTimeout === true),
+);
+const ragAskDetail = computed(() => props.message.ragAskError?.trim() || "");
+
+function citationPageLabel(citation: RagCitationWithPaper): string {
+  return citation.page == null
+    ? t("research.rag.citationPageMissing")
+    : t("research.rag.citationPage", { page: citation.page });
+}
+
+function openRagCitation(citation: RagCitationWithPaper): void {
+  void router?.push({ name: "research.papers.preview", params: { paperId: citation.paperId } });
+}
 
 const effectiveHeadingIdPrefix = computed(() => props.headingIdPrefix || `msg-${props.message.id}`);
 const isCommandMessage = computed(() => props.message.role === "command" || props.message.systemType === "command");
@@ -1212,6 +1234,40 @@ onBeforeUnmount(() => {
               :heading-id-prefix="effectiveHeadingIdPrefix"
             />
 
+            <!-- Knowledge base answer: failed ask shown as an in-chat system hint -->
+            <div v-if="ragAskFailed" class="rag-ask-error" data-testid="rag-ask-error">
+              <span class="rag-ask-error-title">
+                {{ message.ragAskTimeout ? t('research.rag.chatAskTimeout') : t('research.rag.chatAskFailed') }}
+              </span>
+              <span v-if="ragAskDetail" class="rag-ask-error-detail">{{ ragAskDetail }}</span>
+            </div>
+
+            <!-- Knowledge base answer: citation traceability list -->
+            <div
+              v-if="message.role === 'assistant' && ragCitations.length > 0"
+              class="rag-citations"
+              data-testid="rag-citations"
+            >
+              <div class="rag-citations-heading">{{ t('research.rag.chatCitationsTitle') }}</div>
+              <button
+                v-for="(citation, index) in ragCitations"
+                :key="`${citation.paperId}-${index}`"
+                type="button"
+                class="rag-citation"
+                :data-testid="`rag-citation-${index}`"
+                @click="openRagCitation(citation)"
+              >
+                <span class="rag-citation-index">[{{ index + 1 }}]</span>
+                <span class="rag-citation-main">
+                  <span class="rag-citation-title" dir="auto">{{ citation.title || citation.paperId }}</span>
+                  <span class="rag-citation-meta">
+                    <span class="rag-citation-page">{{ citationPageLabel(citation) }}</span>
+                    <span v-if="citation.snippet" class="rag-citation-snippet" dir="auto">{{ citation.snippet }}</span>
+                  </span>
+                </span>
+              </button>
+            </div>
+
             <ToolChangeCard
               v-for="change in workspaceChanges"
               :key="change.change_id"
@@ -1517,6 +1573,112 @@ onBeforeUnmount(() => {
       0 0 20px rgba(255, 107, 107, 0.2);
     animation: rainbow-glow 4s linear infinite;
   }
+}
+
+.rag-ask-error {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.rag-ask-error-title {
+  color: $error;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rag-ask-error-detail {
+  color: $text-secondary;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.rag-citations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid $border-light;
+}
+
+.rag-citations-heading {
+  color: $text-muted;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rag-citation {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid $border-light;
+  border-radius: $radius-sm;
+  background: $bg-secondary;
+  color: $text-primary;
+  text-align: start;
+  cursor: pointer;
+  outline: none;
+
+  &:hover,
+  &:focus-visible {
+    border-color: rgba(var(--accent-primary-rgb), 0.5);
+    background: rgba(var(--accent-primary-rgb), 0.08);
+  }
+}
+
+.rag-citation-index {
+  flex-shrink: 0;
+  color: $accent-primary;
+  font-family: $font-code;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.rag-citation-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rag-citation-title {
+  color: $text-primary;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.rag-citation-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rag-citation-page {
+  flex-shrink: 0;
+  color: $accent-primary;
+  font-family: $font-code;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.rag-citation-snippet {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: $text-secondary;
+  font-size: 11px;
+  line-height: 16px;
 }
 
 :global(html.theme-has-custom-background .message.user .message-bubble:not(.system):not(.command):not(.agent-error)),
