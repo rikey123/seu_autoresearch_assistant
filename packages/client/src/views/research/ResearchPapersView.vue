@@ -1,18 +1,29 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { NButton, NEmpty, NPopconfirm, NSpin, NTag } from 'naive-ui'
+import { NButton, NEmpty, NPopconfirm, NSpin, NTag, useMessage } from 'naive-ui'
 import ResearchPageShell from './ResearchPageShell.vue'
+import ArtifactToChatModal from './ArtifactToChatModal.vue'
 import { usePapersStore } from '@/stores/research/papers'
+import { useChatStore } from '@/stores/hermes/chat'
 import type { PaperRecord } from '@/api/studio/research-library'
+import { buildPaperChatMessageForId } from '@/utils/research-artifact-chat'
 import { formatFileSize, formatImportedAt } from '@/utils/research-paper-format'
 
 const router = useRouter()
 const { t } = useI18n()
+const toast = useMessage()
 const store = usePapersStore()
+const chatStore = useChatStore()
 
 const fileInput = ref<HTMLInputElement | null>(null)
+
+// Artifact-to-chat: pick a session, then deliver the paper reference through
+// the regular chat send channel (no server protocol changes).
+const sendModalOpen = ref(false)
+const sendTargetPaper = ref<PaperRecord | null>(null)
+const sendingToChat = ref(false)
 
 function paperName(paper: PaperRecord): string {
   return paper.title || paper.original_name || t('research.papers.untitled')
@@ -36,6 +47,39 @@ async function onConfirmDelete(paper: PaperRecord): Promise<void> {
 
 function openPreview(paper: PaperRecord): void {
   void router.push({ name: 'research.papers.preview', params: { paperId: paper.id } })
+}
+
+function openSendToChat(paper: PaperRecord): void {
+  sendTargetPaper.value = paper
+  sendModalOpen.value = true
+}
+
+const sendModalTitle = computed(() => (sendTargetPaper.value ? paperName(sendTargetPaper.value) : ''))
+const sendMessageBody = computed(() =>
+  sendTargetPaper.value ? buildPaperChatMessageForId(sendTargetPaper.value) : '',
+)
+
+async function handleSendToChat(sessionId: string | null): Promise<void> {
+  const paper = sendTargetPaper.value
+  if (!paper || sendingToChat.value) return
+  sendingToChat.value = true
+  try {
+    if (sessionId) {
+      await chatStore.switchSession(sessionId)
+    }
+    await chatStore.sendMessage(buildPaperChatMessageForId(paper))
+    toast.success(t('research.papers.sendToChatSuccess'))
+    sendModalOpen.value = false
+    void router.push(
+      sessionId
+        ? { name: 'hermes.session', params: { sessionId } }
+        : { name: 'hermes.chat' },
+    )
+  } catch {
+    toast.error(t('research.papers.sendToChatFailed'))
+  } finally {
+    sendingToChat.value = false
+  }
 }
 
 onMounted(() => {
@@ -91,6 +135,16 @@ onMounted(() => {
             <span v-if="paper.tags.length" class="paper-tags">
               <NTag v-for="tag in paper.tags" :key="tag" size="small" :bordered="false">{{ tag }}</NTag>
             </span>
+            <NButton
+              size="tiny"
+              quaternary
+              class="paper-send-chat"
+              data-testid="paper-send-to-chat"
+              :aria-label="`${t('research.papers.sendToChat')} ${paperName(paper)}`"
+              @click.stop="openSendToChat(paper)"
+            >
+              {{ t('research.papers.sendToChat') }}
+            </NButton>
             <NPopconfirm
               :show-icon="false"
               :positive-text="t('research.papers.deleteConfirm')"
@@ -115,6 +169,13 @@ onMounted(() => {
       </div>
     </template>
   </ResearchPageShell>
+  <ArtifactToChatModal
+    v-model:show="sendModalOpen"
+    :artifact-title="sendModalTitle"
+    :message-body="sendMessageBody"
+    :sending="sendingToChat"
+    @send="handleSendToChat"
+  />
 </template>
 
 <style scoped lang="scss">
@@ -232,6 +293,10 @@ onMounted(() => {
   flex-wrap: wrap;
   flex-shrink: 0;
   gap: 4px;
+}
+
+.paper-send-chat {
+  flex-shrink: 0;
 }
 
 .paper-delete {

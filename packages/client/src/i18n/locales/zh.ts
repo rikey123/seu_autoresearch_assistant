@@ -436,6 +436,15 @@ export default {
       backToList: '返回文献列表',
       previewFrame: 'PDF 预览',
       reload: '重新加载',
+      sendToChat: '发送到聊天',
+      sendToChatTitle: '发送到聊天',
+      sendToChatNewSession: '新建聊天',
+      sendToChatEmpty: '暂无会话',
+      sendToChatLoading: '正在加载会话…',
+      sendToChatSend: '发送',
+      sendToChatSuccess: '论文已发送到聊天。',
+      sendToChatFailed: '发送论文到聊天失败。',
+      sendToChatPreview: '消息预览',
     },
     latex: {
       documentsTitle: '文档',
@@ -901,6 +910,21 @@ export default {
 
   // 对话
   chat: {
+    vcp: {
+      renderToggle: '切换 VCP 卡片渲染',
+      aestheticToggle: '切换卡片美化样式',
+      renderOn: '已开启 VCP 卡片渲染',
+      renderOff: '已关闭 VCP 卡片渲染',
+      typeHtml: 'HTML',
+      typeSvg: 'SVG',
+      typeMermaid: 'Mermaid',
+      typeKatex: 'KaTeX',
+      collapse: '折叠卡片',
+      changeHeight: '调整卡片高度',
+      frameTitle: '{type} 卡片预览',
+      katexFailed: 'KaTeX 渲染失败，已回退为源码展示。',
+      mermaidFailed: 'Mermaid 渲染失败，已回退为源码展示。',
+    },
     contextRemaining: '剩余',
     contextClickToEdit: '点击编辑上下文长度',
     contextEditTitle: '编辑上下文长度',

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { config, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
@@ -68,3 +69,7 @@ describe('MarkdownRenderer special mentions', () => {
     expect(wrapper.find('.mention-highlight').exists()).toBe(false)
   })
 })
+
+// MarkdownRenderer reads the VCP prefs store from the app pinia; register
+// a default instance so these component tests mount without local setup.
+config.global.plugins = [createPinia()]

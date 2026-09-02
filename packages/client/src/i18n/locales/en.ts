@@ -437,6 +437,15 @@ export default {
       backToList: 'Back to papers',
       previewFrame: 'PDF preview',
       reload: 'Reload',
+      sendToChat: 'Send to chat',
+      sendToChatTitle: 'Send to chat',
+      sendToChatNewSession: 'New chat',
+      sendToChatEmpty: 'No conversations yet',
+      sendToChatLoading: 'Loading conversations…',
+      sendToChatSend: 'Send',
+      sendToChatSuccess: 'Paper sent to chat.',
+      sendToChatFailed: 'Failed to send the paper to chat.',
+      sendToChatPreview: 'Message preview',
     },
     latex: {
       documentsTitle: 'Documents',
@@ -903,6 +912,21 @@ export default {
 
   // Chat
   chat: {
+    vcp: {
+      renderToggle: 'Toggle VCP card rendering',
+      aestheticToggle: 'Toggle card aesthetics',
+      renderOn: 'VCP card rendering on',
+      renderOff: 'VCP card rendering off',
+      typeHtml: 'HTML',
+      typeSvg: 'SVG',
+      typeMermaid: 'Mermaid',
+      typeKatex: 'KaTeX',
+      collapse: 'Collapse card',
+      changeHeight: 'Adjust card height',
+      frameTitle: '{type} card preview',
+      katexFailed: 'KaTeX could not render this block; showing the source instead.',
+      mermaidFailed: 'Mermaid could not render this diagram; showing the source instead.',
+    },
     contextRemaining: 'remaining',
     contextClickToEdit: 'Click to edit context length',
     contextEditTitle: 'Edit Context Length',

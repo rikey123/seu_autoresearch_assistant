@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { config, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { createPinia } from 'pinia'
 
 const mermaidMock = vi.hoisted(() => ({
   initialize: vi.fn(),
@@ -877,3 +878,7 @@ describe('MarkdownRenderer', () => {
     expect(execCommand).toHaveBeenCalledWith('copy')
   })
 })
+
+// MarkdownRenderer reads the VCP prefs store from the app pinia; register
+// a default instance so these component tests mount without local setup.
+config.global.plugins = [createPinia()]

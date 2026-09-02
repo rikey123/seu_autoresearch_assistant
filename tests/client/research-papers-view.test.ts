@@ -53,6 +53,12 @@ vi.mock('naive-ui', () => ({
     props: ['size', 'bordered'],
     template: '<span class="n-tag-stub"><slot /></span>',
   }),
+  NModal: defineComponent({
+    props: ['show', 'maskClosable'],
+    emits: ['update:show'],
+    template: '<div v-if="show" class="n-modal-stub"><slot /></div>',
+  }),
+  useMessage: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }),
 }))
 
 vi.mock('@/api/studio/research-library', () => ({
@@ -60,6 +66,26 @@ vi.mock('@/api/studio/research-library', () => ({
   uploadPaper: uploadPaperMock,
   deletePaper: deletePaperMock,
   paperFileUrl: (id: string) => `/api/studio/research/library/papers/${id}/file`,
+}))
+
+// The view hosts the artifact-to-chat modal, which pulls in the chat store
+// (and with it the whole API/socket module graph). Stub the pieces the modal
+// touches; the send-to-chat flow itself is covered in
+// research-paper-send-to-chat.test.ts.
+const chatStoreMock = vi.hoisted(() => ({
+  loadSessions: vi.fn(async () => {}),
+  switchSession: vi.fn(async () => {}),
+  sendMessage: vi.fn(async () => {}),
+}))
+
+vi.mock('@/stores/hermes/chat', () => ({
+  useChatStore: () => ({
+    sessions: [],
+    sessionsLoaded: true,
+    loadSessions: chatStoreMock.loadSessions,
+    switchSession: chatStoreMock.switchSession,
+    sendMessage: chatStoreMock.sendMessage,
+  }),
 }))
 
 function paperRecord(overrides: Record<string, unknown> = {}) {
