@@ -46,7 +46,7 @@
 | T2.1c | 引擎分发：normalize 类型分支 + 确定性执行器（DI 注入）+ 输出捕获/rerun 恢复切换（基座改动 BC-3） | feature/p2-T1c-engine-dispatch | 单测覆盖 5 种节点类型；改动集中登记、upstream 可同步 | ✅ 已合入 main（0a59987 → merge 55fdba1，pm 验收通过：新增 9 用例 + 全量回归 211 绿 + build） |
 | T2.2 | 模板 literature-review + paper-translate（翻译走 API） | feature/p2-T2-templates | 端到端跑通一次（可 mock LLM） | ✅ 已合入 main（65bcab1 + 654e42d 引擎协议适配修复 → merge 7dcfbe9；审查两轮：首轮 request-changes 指出 PT 链路不适配引擎包装输入，修复后模板级 e2e 2/2 + research 22/22 + 引擎 155/155 绿，pm 验收通过） |
 | T2.3 | 画布适配科研节点（前端，含未知节点兜底） | feature/p2-T3-canvas | 新节点可拖拽配置 | ✅ 已合入 main（d0fc4e5 → merge 8a323ce，pm 验收通过：46/46 实跑 + build） |
-| T2.4 | overnight-research 批处理模板 | feature/p2-T4-overnight | 队列+晨报 HTML 产物 | 🔄 施工中（w13-overnight，2026-09-02 派单） |
+| T2.4 | overnight-research 批处理模板 | feature/p2-T4-overnight | 队列+晨报 HTML 产物 | ✅ 已合入 main（6968086 → merge d3b6871，审查 approve：research 33/33 + 引擎 141/141，队列校验/去重/分批与晨报四节产物均经真实引擎 e2e） |
 | T2.F1 | codex 评审 F1 修复：引擎生命周期加固（基座改动 BC-5） | feature/p2-fix-engine-lifecycle | 停止可中止确定性脚本/进程树清理/输出上限/rerun admission+CAS | ✅ 已合入 main（4626773 + 8a67795 测试超时修复 → merge f9de080；审查通过：deterministic 13/13 + manager 128/128 + tests/server 全量零回归） |
 | T2.F2 | codex 评审 F2 修复：客户端契约（基座改动 BC-6） | feature/p2-fix-client-contracts | 未知类型真正无损往返/output_json 类型同步/script runtime 守卫/失败详情 | ✅ 已合入 main（afa98f0 → merge 73c210a；审查 approve：客户端 1498 用例 + vue-tsc + build 绿） |
 | **审查B** | 审查员单节点正确性 + **Codex 大阶段评审 1**（引擎集成设计） | — | — | ⏳ 待 T2.4 合入后执行（BC-5/BC-6 阻断项已修复合入） |
@@ -55,10 +55,10 @@
 
 | # | 任务 | 分支 | 验收 |
 | --- | --- | --- | --- |
-| T3.1 | PDF 预览+论文库 UI | feature/p3-T1-pdf | 大 PDF 流式打开 |
-| T3.2 | pdf2zh sidecar+翻译队列+双语对照（翻译引擎=OpenAI 兼容 API，不跑本地模型） | feature/p3-T2-translate | 一篇真实 PDF 出双语 |
-| T3.3 | LaTeX 编辑器+tectonic 编译+实时预览（tectonic 纯编译无模型依赖） | feature/p3-T3-latex | 模板论文编译出 PDF，错误面板定位 |
-| **审查C** | 审查员 + **Codex 大阶段评审 2** | — | — |
+| T3.1 | PDF 预览+论文库 UI | feature/p3-T1-pdf | 大 PDF 流式打开 | ✅ 已合入 main（f875b5a → merge 8edddf7，审查 approve：Range 全分支实测 206/416/回退，客户端 1512 绿，零新依赖） |
+| T3.2 | pdf2zh sidecar+翻译队列+双语对照（翻译引擎=OpenAI 兼容 API，不跑本地模型） | feature/p3-T2-translate | 一篇真实 PDF 出双语 | ✅ 已合入 main（a0d26b7 → merge 3370009，审查 approve；**真实链路已打通**：conda py3.12 + pdf2zh-next 2.9.0，google 后端真出双语，门控 e2e 实跑 61.6s； argv 契约与 T2.2 模板一致） |
+| T3.3 | LaTeX 编辑器+tectonic 编译+实时预览（tectonic 纯编译无模型依赖） | feature/p3-T3-latex | 模板论文编译出 PDF，错误面板定位 | ✅ 已合入 main（311341c → merge fc7f262，审查 approve；**真机 tectonic v0.17.0 实际编译出 PDF**（2.1s），错误解析定位经真实 stderr 验证） |
+| **审查C** | 审查员 + **Codex 大阶段评审 2** | — | — | 🔄 进行中（对合并后 main 整体评审，含 pm 冲突解决复核：library/index.ts 路由合并、en/zh locale 双块保留） |
 
 ## P4 RAG + VCP 渲染 + skill 装载（W11-W14）
 
