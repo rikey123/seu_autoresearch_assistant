@@ -13,13 +13,39 @@ import {
 // Script bodies are String.raw blocks: the deterministic executor runs them as
 // `node -e` processes, so guest code must avoid template literals and shell
 // string building entirely — subprocess arguments are always structured arrays.
+//
+// The engine wraps every node input as "[Workflow upstream results]",
+// "[Upstream: <title>]", and "[Current task]" sections (plus the placeholder
+// task line for nodes without authored input). Every template script strips
+// those wrapper lines before parsing a bare path/JSON payload, so the engine
+// packaging never leaks into node output.
+const ENGINE_WRAPPER_HELPERS = String.raw`function stripEngineWrapperLines(text) {
+  return text.split(/\r?\n/).filter(function (line) {
+    var trimmed = line.trim();
+    if (trimmed === '[Workflow upstream results]') return false;
+    if (trimmed === '[Current task]') return false;
+    if (trimmed === 'Execute the current workflow node.') return false;
+    if (trimmed.indexOf('[Upstream:') === 0 && trimmed.slice(-1) === ']') return false;
+    return true;
+  }).join('\n').trim();
+}
+function parseJsonPayload(text) {
+  try { return JSON.parse(text); } catch (error) {}
+  var start = text.indexOf('{');
+  var end = text.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(text.slice(start, end + 1)); } catch (error) {}
+  }
+  return null;
+}
+`
+
 const LR_HTML_REPORT_CODE = String.raw`'use strict';
-var rawInput = '';
+${ENGINE_WRAPPER_HELPERS}var rawInput = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', function (chunk) { rawInput += chunk; });
 process.stdin.on('end', function () {
-  // Drop engine upstream annotations like "[Upstream: ...]" before rendering.
-  var source = rawInput.replace(/^\[Upstream:[^\n]*\n/gm, '').trim();
+  var source = stripEngineWrapperLines(rawInput);
   if (!source) {
     console.error('html report node received no draft input');
     process.exit(1);
@@ -92,25 +118,21 @@ process.stdin.on('end', function () {
 });`
 
 const PT_PDF_INTAKE_CODE = String.raw`'use strict';
-var rawInput = '';
+${ENGINE_WRAPPER_HELPERS}var rawInput = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', function (chunk) { rawInput += chunk; });
 process.stdin.on('end', function () {
   var fs = require('node:fs');
   var path = require('node:path');
-  var text = rawInput.trim();
+  var text = stripEngineWrapperLines(rawInput);
   if (!text) {
     console.error('pdf intake node received no input: pass JSON {"pdfPath": "..."} or an absolute PDF path');
     process.exit(1);
   }
   var pdfPath = text;
-  try {
-    var parsed = JSON.parse(text);
-    if (parsed && typeof parsed.pdfPath === 'string') pdfPath = parsed.pdfPath;
-    else if (parsed && typeof parsed.path === 'string') pdfPath = parsed.path;
-  } catch (error) {
-    // Plain path input is fine.
-  }
+  var parsed = parseJsonPayload(text);
+  if (parsed && typeof parsed.pdfPath === 'string') pdfPath = parsed.pdfPath;
+  else if (parsed && typeof parsed.path === 'string') pdfPath = parsed.path;
   pdfPath = pdfPath.trim();
   if (!path.isAbsolute(pdfPath)) {
     console.error('pdfPath must be an absolute path, received: ' + pdfPath);
@@ -141,22 +163,18 @@ process.stdin.on('end', function () {
 // Translation node: API-first. pdf2zh (-s openai) drives translation through an
 // OpenAI-compatible HTTP endpoint; nothing is downloaded and no local model is
 // executed. The child process is spawned with a structured argv array and
-// shell:false — never a concatenated shell command string.
+// shell:false — never a concatenated shell command string. PAPER_TRANSLATE_PDF2ZH_BIN
+// may point at a native binary or at a Node wrapper script (.js/.cjs/.mjs).
 const PT_TRANSLATE_CODE = String.raw`'use strict';
-var rawInput = '';
+${ENGINE_WRAPPER_HELPERS}var rawInput = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', function (chunk) { rawInput += chunk; });
 process.stdin.on('end', function () {
   var fs = require('node:fs');
   var path = require('node:path');
   var cp = require('node:child_process');
-  var pdfPath = '';
-  try {
-    var parsed = JSON.parse(rawInput.trim());
-    if (parsed && typeof parsed.pdfPath === 'string') pdfPath = parsed.pdfPath;
-  } catch (error) {
-    pdfPath = '';
-  }
+  var parsed = parseJsonPayload(stripEngineWrapperLines(rawInput));
+  var pdfPath = parsed && typeof parsed.pdfPath === 'string' ? parsed.pdfPath : '';
   if (!pdfPath) {
     console.error('translate node expects JSON {"pdfPath": "..."} from the intake node');
     process.exit(1);
@@ -173,10 +191,18 @@ process.stdin.on('end', function () {
   var outDir = path.join(path.dirname(pdfPath), 'paper-translate-out');
   fs.mkdirSync(outDir, { recursive: true });
   var args = ['-i', pdfPath, '-o', outDir, '-s', 'openai', '-lo', targetLang];
+  var spawnBin = pdf2zhBin;
+  if (/\.(?:js|cjs|mjs)$/i.test(pdf2zhBin)) {
+    // The configured bin is a Node wrapper script: execute it with the current
+    // Node runtime. Still a structured argv array and shell:false — the exact
+    // same argv contract as the native pdf2zh binary.
+    spawnBin = process.execPath;
+    args = [pdf2zhBin].concat(args);
+  }
   var childEnv = Object.assign({}, process.env, { OPENAI_API_KEY: apiKey });
   if (baseUrl) { childEnv.OPENAI_BASE_URL = baseUrl; }
   if (model) { childEnv.OPENAI_MODEL = model; }
-  var child = cp.spawn(pdf2zhBin, args, {
+  var child = cp.spawn(spawnBin, args, {
     cwd: path.dirname(pdfPath),
     shell: false,
     windowsHide: true,
@@ -223,18 +249,13 @@ process.stdin.on('end', function () {
 });`
 
 const PT_BILINGUAL_CODE = String.raw`'use strict';
-var rawInput = '';
+${ENGINE_WRAPPER_HELPERS}var rawInput = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', function (chunk) { rawInput += chunk; });
 process.stdin.on('end', function () {
   var fs = require('node:fs');
   var path = require('node:path');
-  var payload = null;
-  try {
-    payload = JSON.parse(rawInput.trim());
-  } catch (error) {
-    payload = null;
-  }
+  var payload = parseJsonPayload(stripEngineWrapperLines(rawInput));
   if (!payload || typeof payload.pdfPath !== 'string' || typeof payload.monoPath !== 'string' || typeof payload.dualPath !== 'string') {
     console.error('bilingual node expects JSON {"pdfPath","monoPath","dualPath"} from the translate node');
     process.exit(1);
@@ -386,7 +407,7 @@ const paperTranslate: ResearchWorkflowTemplate = {
     OPENAI_BASE_URL: 'OpenAI 兼容服务地址，默认官方端点',
     OPENAI_MODEL: '翻译用模型名，默认 pdf2zh 内置值',
     PAPER_TRANSLATE_TARGET_LANG: '目标语言代码，默认 zh',
-    PAPER_TRANSLATE_PDF2ZH_BIN: 'pdf2zh 可执行文件路径，默认取 PATH 中的 pdf2zh',
+    PAPER_TRANSLATE_PDF2ZH_BIN: 'pdf2zh 可执行文件路径，默认取 PATH 中的 pdf2zh；也可指向 Node 包装脚本（.js/.cjs/.mjs，以当前 Node 运行时执行）',
   },
   nodes: [
     scriptTemplateNode({
