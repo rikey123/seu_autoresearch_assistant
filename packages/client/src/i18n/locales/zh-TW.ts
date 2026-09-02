@@ -525,6 +525,11 @@ export default {
       questionPending: '正在等待回答…',
       citationPage: '第 {page} 頁',
       citationPageMissing: '頁碼未知',
+      chatSelectedHint: '正在基於知識庫回答',
+      chatClearSelection: '停用該知識庫',
+      chatCitationsTitle: '引用溯源',
+      chatAskFailed: '知識庫問答失敗。',
+      chatAskTimeout: '知識庫回答逾時。',
     },
   },
 

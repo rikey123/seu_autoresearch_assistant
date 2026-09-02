@@ -524,6 +524,11 @@ export default {
       questionPending: '正在等待回答…',
       citationPage: '第 {page} 页',
       citationPageMissing: '页码未知',
+      chatSelectedHint: '正在基于知识库回答',
+      chatClearSelection: '停用该知识库',
+      chatCitationsTitle: '引用溯源',
+      chatAskFailed: '知识库问答失败。',
+      chatAskTimeout: '知识库回答超时。',
     },
   },
 

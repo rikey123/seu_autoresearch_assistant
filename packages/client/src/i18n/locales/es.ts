@@ -537,6 +537,11 @@ export default {
       questionPending: 'Esperando la respuesta…',
       citationPage: 'p. {page}',
       citationPageMissing: 'página n/d',
+      chatSelectedHint: 'Respondiendo desde la base de conocimiento',
+      chatClearSelection: 'Dejar de usar esta base de conocimiento',
+      chatCitationsTitle: 'Citas',
+      chatAskFailed: 'La pregunta a la base de conocimiento falló.',
+      chatAskTimeout: 'La respuesta de la base de conocimiento agotó el tiempo de espera.',
     },
   },
 

@@ -526,6 +526,11 @@ export default {
       questionPending: 'Waiting for the answer…',
       citationPage: 'p. {page}',
       citationPageMissing: 'page n/a',
+      chatSelectedHint: 'Answering from knowledge base',
+      chatClearSelection: 'Stop using this knowledge base',
+      chatCitationsTitle: 'Citations',
+      chatAskFailed: 'The knowledge base question failed.',
+      chatAskTimeout: 'The knowledge base answer timed out.',
     },
   },
 

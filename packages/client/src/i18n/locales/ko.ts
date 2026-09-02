@@ -537,6 +537,11 @@ export default {
       questionPending: '답변을 기다리는 중…',
       citationPage: '{page}쪽',
       citationPageMissing: '페이지 없음',
+      chatSelectedHint: '지식베이스 기반 답변 중',
+      chatClearSelection: '이 지식베이스 사용 중지',
+      chatCitationsTitle: '참고 문헌',
+      chatAskFailed: '지식베이스 질문이 실패했습니다.',
+      chatAskTimeout: '지식베이스 응답이 시간 초과되었습니다.',
     },
   },
 

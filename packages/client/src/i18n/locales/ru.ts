@@ -447,6 +447,11 @@ export default {
       questionPending: 'Ожидание ответа…',
       citationPage: 'стр. {page}',
       citationPageMissing: 'страница неизвестна',
+      chatSelectedHint: 'Ответ на основе базы знаний',
+      chatClearSelection: 'Перестать использовать эту базу знаний',
+      chatCitationsTitle: 'Цитаты',
+      chatAskFailed: 'Не удалось задать вопрос базе знаний.',
+      chatAskTimeout: 'Время ожидания ответа базы знаний истекло.',
     },
   },
 
