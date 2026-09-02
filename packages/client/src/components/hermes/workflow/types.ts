@@ -40,10 +40,17 @@ export type WorkflowDeterministicNodeEditableData = Pick<WorkflowDeterministicNo
 export interface WorkflowDeterministicNodeData {
   title: string
   code?: string
+  // Server script contract requires runtime === 'node' (canonicalizer in
+  // server manager.ts). Validate/render are title-only: the server injects
+  // `input` and `orchestration` for them automatically at canonicalization.
+  runtime?: string
   input?: string
   status: WorkflowNodeStatus
   statusError?: string | null
   readonly?: boolean
+  // Set on load when a script node's stored runtime is missing or not 'node'.
+  // Data is kept verbatim; saving is blocked until the user fixes it.
+  scriptRuntimeInvalid?: boolean
   onUpdate?: (id: string, patch: Partial<WorkflowDeterministicNodeEditableData>) => void
   [key: string]: unknown
 }

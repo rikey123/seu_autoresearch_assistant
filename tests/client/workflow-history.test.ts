@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { buildWorkflowEvidenceRows, formatIterationPath, latestWorkflowNodeSession, summarizeWorkflowEvidenceRows, workflowEdgePlaybackState } from '../../packages/client/src/utils/workflow-history'
 
 const path = [{ loopId: 'outer', iteration: 1 }, { loopId: 'inner', iteration: 2 }]
+
+describe('workflow run node session contract', () => {
+  it('declares output_json as a required string on the client session record', () => {
+    const source = readFileSync('packages/client/src/api/studio/workflows.ts', 'utf8')
+    const interfaceBody = source.slice(
+      source.indexOf('export interface WorkflowRunNodeSessionRecord'),
+      source.indexOf('export interface WorkflowRunEdgeEvaluationRecord'),
+    )
+    expect(interfaceBody).toContain('output_json: string')
+  })
+})
 
 describe('workflow history evidence', () => {
   it('formats canonical nested iteration paths without losing hierarchy', () => {

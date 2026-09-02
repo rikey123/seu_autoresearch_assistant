@@ -1322,6 +1322,8 @@ export default {
       modelRequired: 'Node {node} needs a model',
       apiModeRequired: 'Node {node} needs an API mode',
       inputRequired: 'Node {node} needs input',
+      scriptRuntimeInvalid: 'Node {node} has an unsupported script runtime. Only "node" is supported.',
+      scriptCodeRequired: 'Node {node} needs script code before saving',
       invalidEdge: 'A connection references a missing node',
       invalidConnectionDirection: 'Connections must go from the right output to the left input',
       orphanNode: 'Node {node} is not connected to the workflow',

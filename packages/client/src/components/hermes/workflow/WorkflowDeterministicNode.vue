@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Handle, Position, type NodeProps } from '@vue-flow/core'
-import { NInput } from 'naive-ui'
+import { NInput, NTooltip } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import type { WorkflowDeterministicNodeData, WorkflowDeterministicNodeEditableData } from './types'
 
@@ -10,6 +10,13 @@ const { t } = useI18n()
 
 const statusClass = computed(() => `status-${props.data.status}`)
 const statusLabel = computed(() => t(`workflow.status.${props.data.status}`))
+// Mirrors WorkflowAgentNode: failed nodes surface the truncated statusError
+// through a tooltip on the status label.
+const statusTip = computed(() => (
+  props.data.status === 'failed' && props.data.statusError?.trim()
+    ? props.data.statusError.trim()
+    : ''
+))
 const typeLabel = computed(() => {
   if (props.type === 'script') return t('workflow.nodeType.script')
   if (props.type === 'validate') return t('workflow.nodeType.validate')
@@ -34,7 +41,16 @@ function handleControlEvent(event: Event) {
     <Handle id="top" type="source" :position="Position.Top" class="workflow-handle top-handle" />
 
     <div class="node-header">
-      <span class="node-status-with-tip">
+      <NTooltip v-if="statusTip" trigger="hover" placement="top">
+        <template #trigger>
+          <span class="node-status-with-tip">
+            <span class="node-status-dot" />
+            <span class="node-status-label">{{ statusLabel }}</span>
+          </span>
+        </template>
+        <span class="node-status-tip">{{ statusTip }}</span>
+      </NTooltip>
+      <span v-else class="node-status-with-tip">
         <span class="node-status-dot" />
         <span class="node-status-label">{{ statusLabel }}</span>
       </span>
@@ -141,6 +157,11 @@ function handleControlEvent(event: Event) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.node-status-tip {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .node-status-label {

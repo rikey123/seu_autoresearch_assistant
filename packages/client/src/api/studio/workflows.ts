@@ -88,6 +88,9 @@ export interface WorkflowRunNodeSessionRecord {
   created_at: number
   updated_at: number
   error: string | null
+  // Last assistant output captured by the server for this node session.
+  // Always a string (empty when absent), matching the server repository contract.
+  output_json: string
 }
 
 export interface WorkflowRunEdgeEvaluationRecord {

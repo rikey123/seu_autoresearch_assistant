@@ -23,6 +23,7 @@ import {
 } from '@/utils/workflow-run-snapshot'
 import {
   createDeterministicWorkflowNodeData,
+  canonicalizeScriptWorkflowNodeData,
   isDeterministicWorkflowNodeType,
   isKnownWorkflowNodeType,
   normalizeDeterministicWorkflowNodeData,
@@ -30,6 +31,7 @@ import {
   normalizeWorkflowNodeType,
   serializeDeterministicWorkflowNode,
   WORKFLOW_DETERMINISTIC_NODE_TYPES,
+  WORKFLOW_SCRIPT_NODE_RUNTIME,
   type WorkflowDeterministicNodeType,
 } from '@/utils/workflow-node-type'
 import {
@@ -732,6 +734,8 @@ function makeDeterministicNode(
     style: { width: `${WORKFLOW_NODE_DEFAULT_WIDTH}px`, height: `${WORKFLOW_NODE_DEFAULT_HEIGHT}px` },
     data: {
       ...createDeterministicWorkflowNodeData(type, title),
+      // Freshly authored scripts always carry the canonical runtime.
+      ...(type === 'script' ? { runtime: WORKFLOW_SCRIPT_NODE_RUNTIME, scriptRuntimeInvalid: false } : {}),
       onUpdate: updateDeterministicNodeData,
     } as WorkflowDeterministicNodeData,
   }
@@ -1206,6 +1210,13 @@ function normalizeStoredNode(raw: unknown, index: number): WorkflowNode {
   const id = typeof record.id === 'string' && record.id ? record.id : `agent-${index + 1}`
   const title = typeof data.title === 'string' && data.title ? data.title : t('workflow.newNodeTitle', { count: index + 1 })
   if (type !== 'agent') {
+    // Known deterministic types (script/validate/render) get contract
+    // normalization; unknown types pass through losslessly. Script nodes are
+    // additionally canonicalized: a missing/invalid runtime is flagged, never
+    // silently rewritten.
+    const canonical = type === 'script'
+      ? canonicalizeScriptWorkflowNodeData(data, title)
+      : { ...normalizeDeterministicWorkflowNodeData(data, title, type), scriptRuntimeInvalid: false }
     return {
       id,
       type,
@@ -1216,7 +1227,7 @@ function normalizeStoredNode(raw: unknown, index: number): WorkflowNode {
         height: frame.storedHeight || WORKFLOW_NODE_FALLBACK_STYLE.height,
       },
       data: {
-        ...normalizeDeterministicWorkflowNodeData(data, title),
+        ...canonical,
         onUpdate: updateDeterministicNodeData,
       } as WorkflowDeterministicNodeData,
     }
@@ -2626,7 +2637,17 @@ function workflowValidationError(): string | null {
   for (const node of nodes.value) {
     const label = workflowNodeLabel(node)
     if (!node.data.title.trim()) return t('workflow.validation.nodeNameRequired', { node: node.id })
-    if (!isWorkflowAgentNode(node)) continue
+    if (!isWorkflowAgentNode(node)) {
+      // Deterministic contract checks. scriptRuntimeInvalid is set at load
+      // time when the stored runtime is missing or not 'node'; the stored
+      // data is never rewritten silently.
+      if (node.data.scriptRuntimeInvalid === true) return t('workflow.validation.scriptRuntimeInvalid', { node: label })
+      if (node.type === 'script' && !String(node.data.code ?? '').trim()) return t('workflow.validation.scriptCodeRequired', { node: label })
+      // validate/render nodes carry a title-only contract on this client; the
+      // server canonicalizer injects their `input` and `orchestration` fields
+      // automatically when the workflow runs.
+      continue
+    }
     const usesGlobalCodingAgent = ['claude-code', 'codex', 'pi'].includes(node.data.agent)
       && node.data.agentMode === 'global'
     if (!usesGlobalCodingAgent && !node.data.provider.trim()) return t('workflow.validation.providerRequired', { node: label })

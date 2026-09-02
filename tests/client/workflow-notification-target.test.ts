@@ -22,6 +22,7 @@ function record(executionId: string, sequence: number): WorkflowRunNodeSessionRe
     created_at: sequence,
     updated_at: sequence,
     error: null,
+    output_json: '',
   }
 }
 
