@@ -1311,6 +1311,8 @@ export default {
       modelRequired: 'العقدة {node} تحتاج إلى نموذج',
       apiModeRequired: 'العقدة {node} تحتاج إلى وضع API',
       inputRequired: 'العقدة {node} تحتاج إلى مدخل',
+      scriptRuntimeInvalid: 'العقدة {node} تستخدم بيئة تشغيل غير مدعومة للسكربت. البيئة المدعومة هي "node" فقط.',
+      scriptCodeRequired: 'العقدة {node} تحتاج إلى شيفرة السكربت قبل الحفظ',
       invalidEdge: 'أحد الاتصالات يشير إلى عقدة مفقودة',
       invalidConnectionDirection: 'يجب أن تسير الاتصالات من المخرج الأيمن إلى المدخل الأيسر',
       orphanNode: 'العقدة {node} غير متصلة بمسار العمل',

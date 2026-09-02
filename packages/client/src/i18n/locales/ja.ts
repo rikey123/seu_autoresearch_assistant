@@ -2650,7 +2650,7 @@ export default {
     },
     batch: { toggle: '一括選択', selectAll: 'すべて選択', confirmDelete: '選択した {count} 件のワークフローを削除しますか？', deleteSuccess: '{count} 件のワークフローを削除しました', deletePartial: '{failed} 件のワークフローを削除できませんでした', deleteFailed: '一括削除に失敗しました' },
     validation: {
-      nodesRequired: 'ノードを1つ以上追加してください', nodeNameRequired: 'ノード {node} に名前が必要です', providerRequired: 'ノード {node} にプロバイダーが必要です', modelRequired: 'ノード {node} にモデルが必要です', apiModeRequired: 'ノード {node} に API モードが必要です', inputRequired: 'ノード {node} に入力が必要です',
+      nodesRequired: 'ノードを1つ以上追加してください', nodeNameRequired: 'ノード {node} に名前が必要です', providerRequired: 'ノード {node} にプロバイダーが必要です', modelRequired: 'ノード {node} にモデルが必要です', apiModeRequired: 'ノード {node} に API モードが必要です', inputRequired: 'ノード {node} に入力が必要です', scriptRuntimeInvalid: 'ノード {node} のスクリプトランタイムはサポートされていません。「node」のみサポートされています。', scriptCodeRequired: 'ノード {node} は保存前にスクリプトコードが必要です',
       invalidEdge: '接続が存在しないノードを参照しています', invalidConnectionDirection: '接続は右側の出力から左側の入力へ向ける必要があります', orphanNode: 'ノード {node} がワークフローに接続されていません', disconnectedFlow: 'ワークフローを複数の分断されたフローに分けることはできません', cycle: 'ワークフローに循環があります。保存前に接続を調整してください。',
     },
     stats: { nodes: 'ノード', edges: '接続' },

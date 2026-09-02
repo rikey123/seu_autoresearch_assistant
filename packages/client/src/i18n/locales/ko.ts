@@ -2650,7 +2650,7 @@ export default {
     },
     batch: { toggle: '일괄 선택', selectAll: '모두 선택', confirmDelete: '선택한 워크플로 {count}개를 삭제할까요?', deleteSuccess: '워크플로 {count}개를 삭제했습니다', deletePartial: '워크플로 {failed}개를 삭제하지 못했습니다', deleteFailed: '일괄 삭제에 실패했습니다' },
     validation: {
-      nodesRequired: '노드를 하나 이상 추가해 주세요', nodeNameRequired: '노드 {node}에 이름이 필요합니다', providerRequired: '노드 {node}에 제공자가 필요합니다', modelRequired: '노드 {node}에 모델이 필요합니다', apiModeRequired: '노드 {node}에 API 모드가 필요합니다', inputRequired: '노드 {node}에 입력이 필요합니다',
+      nodesRequired: '노드를 하나 이상 추가해 주세요', nodeNameRequired: '노드 {node}에 이름이 필요합니다', providerRequired: '노드 {node}에 제공자가 필요합니다', modelRequired: '노드 {node}에 모델이 필요합니다', apiModeRequired: '노드 {node}에 API 모드가 필요합니다', inputRequired: '노드 {node}에 입력이 필요합니다', scriptRuntimeInvalid: '노드 {node}의 스크립트 런타임이 지원되지 않습니다. "node"만 지원됩니다.', scriptCodeRequired: '노드 {node}은(는) 저장하기 전에 스크립트 코드가 필요합니다',
       invalidEdge: '연결이 존재하지 않는 노드를 참조합니다', invalidConnectionDirection: '연결은 오른쪽 출력에서 왼쪽 입력으로 이어져야 합니다', orphanNode: '노드 {node}가 워크플로에 연결되지 않았습니다', disconnectedFlow: '워크플로를 서로 분리된 여러 흐름으로 나눌 수 없습니다', cycle: '워크플로에 순환이 있습니다. 저장하기 전에 연결을 조정해 주세요.',
     },
     stats: { nodes: '노드', edges: '연결' },

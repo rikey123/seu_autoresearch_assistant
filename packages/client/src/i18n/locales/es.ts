@@ -2651,7 +2651,7 @@ jobTriggered: 'Job ejecutado',
     },
     batch: { toggle: 'Selección múltiple', selectAll: 'Seleccionar todo', confirmDelete: '¿Eliminar los {count} Workflows seleccionados?', deleteSuccess: 'Se eliminaron {count} Workflows', deletePartial: 'No se pudieron eliminar {failed} Workflows', deleteFailed: 'Error en la eliminación múltiple' },
     validation: {
-      nodesRequired: 'Añade al menos un nodo', nodeNameRequired: 'El nodo {node} necesita un nombre', providerRequired: 'El nodo {node} necesita un proveedor', modelRequired: 'El nodo {node} necesita un modelo', apiModeRequired: 'El nodo {node} necesita un modo de API', inputRequired: 'El nodo {node} necesita una entrada',
+      nodesRequired: 'Añade al menos un nodo', nodeNameRequired: 'El nodo {node} necesita un nombre', providerRequired: 'El nodo {node} necesita un proveedor', modelRequired: 'El nodo {node} necesita un modelo', apiModeRequired: 'El nodo {node} necesita un modo de API', inputRequired: 'El nodo {node} necesita una entrada', scriptRuntimeInvalid: 'El nodo {node} usa un entorno de ejecución de script no compatible. Solo se admite "node".', scriptCodeRequired: 'El nodo {node} necesita código de script antes de guardar',
       invalidEdge: 'Una conexión hace referencia a un nodo inexistente', invalidConnectionDirection: 'Las conexiones deben ir de la salida derecha a la entrada izquierda', orphanNode: 'El nodo {node} no está conectado al Workflow', disconnectedFlow: 'El Workflow no puede dividirse en varios flujos desconectados', cycle: 'El Workflow contiene un ciclo. Ajusta las conexiones antes de guardar.',
     },
     stats: { nodes: 'nodos', edges: 'conexiones' },

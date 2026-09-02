@@ -30,7 +30,17 @@ export const WORKFLOW_AGENT_NODE_DATA_KEYS: readonly string[] = [
   'onUploadImages',
 ]
 
-export const WORKFLOW_NODE_RUNTIME_DATA_KEYS: readonly string[] = ['status', 'statusError', 'readonly']
+// Runtime-only keys are canvas session state (playback status, client-side
+// validation flags) and are never persisted user data.
+export const WORKFLOW_NODE_RUNTIME_DATA_KEYS: readonly string[] = ['status', 'statusError', 'readonly', 'scriptRuntimeInvalid']
+
+// UI-only keys that live on canvas node data but are never persisted user data:
+// runtime playback state plus the edit callbacks attached when a node is loaded.
+export const WORKFLOW_NODE_UI_ONLY_DATA_KEYS: readonly string[] = [
+  ...WORKFLOW_NODE_RUNTIME_DATA_KEYS,
+  'onUpdate',
+  'onUploadImages',
+]
 
 export function isKnownWorkflowNodeType(type: unknown): type is WorkflowNodeType {
   return typeof type === 'string' && (WORKFLOW_NODE_TYPES as readonly string[]).includes(type)
@@ -59,6 +69,19 @@ export function stripWorkflowDeterministicNodeDataFields(data: Record<string, un
   for (const [key, value] of Object.entries(data)) {
     if (WORKFLOW_AGENT_NODE_DATA_KEYS.includes(key) && !WORKFLOW_DETERMINISTIC_PRESERVED_DATA_KEYS.includes(key)) continue
     if (WORKFLOW_NODE_RUNTIME_DATA_KEYS.includes(key)) continue
+    result[key] = value
+  }
+  return result
+}
+
+// Unknown node types are forward-compat payloads: their data must round-trip
+// untouched, so only strip keys that are provably canvas UI plumbing, never
+// the agent-key list (an unknown type may legitimately carry keys like
+// agent/model/provider as its own domain data).
+export function stripWorkflowUnknownNodeDataFields(data: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(data)) {
+    if (WORKFLOW_NODE_UI_ONLY_DATA_KEYS.includes(key)) continue
     result[key] = value
   }
   return result
@@ -101,13 +124,44 @@ export function normalizeWorkflowNodeFrame(raw: unknown, index: number): Workflo
   }
 }
 
-export function normalizeDeterministicWorkflowNodeData(rawData: unknown, title: string): Record<string, unknown> {
+// Three-path data normalization on load/serialize:
+//   (a) agent nodes — handled by WorkflowView (behavior unchanged);
+//   (b) known deterministic types (script/validate/render) — contract normalization;
+//   (c) unknown types — lossless passthrough, only canvas UI plumbing removed.
+export function normalizeDeterministicWorkflowNodeData(
+  rawData: unknown,
+  title: string,
+  nodeType: string = 'script',
+): Record<string, unknown> {
   const data = rawData && typeof rawData === 'object' ? rawData as Record<string, unknown> : {}
+  if (!isDeterministicWorkflowNodeType(nodeType)) {
+    return {
+      ...stripWorkflowUnknownNodeDataFields(data),
+      title,
+    }
+  }
   return {
     ...stripWorkflowDeterministicNodeDataFields(data),
     title,
     status: 'idle' as const,
   }
+}
+
+// Load-time script canonicalization mirroring the server canonicalizer: script
+// nodes require runtime === 'node'. A mismatched or missing runtime is flagged
+// as invalid instead of being silently rewritten, so the user's stored data is
+// preserved and saving is blocked with a clear message until it is fixed.
+export function canonicalizeScriptWorkflowNodeData(
+  rawData: unknown,
+  title: string,
+): Record<string, unknown> & { scriptRuntimeInvalid: boolean } {
+  const normalized = normalizeDeterministicWorkflowNodeData(rawData, title, 'script')
+  const runtime = typeof normalized.runtime === 'string' ? normalized.runtime : ''
+  if (runtime === WORKFLOW_SCRIPT_NODE_RUNTIME) {
+    const { scriptRuntimeInvalid: _flag, ...data } = normalized as Record<string, unknown> & { scriptRuntimeInvalid?: boolean }
+    return { ...data, scriptRuntimeInvalid: false }
+  }
+  return { ...normalized, scriptRuntimeInvalid: true }
 }
 
 export interface WorkflowCanvasNodeSnapshot {
@@ -120,6 +174,18 @@ export interface WorkflowCanvasNodeSnapshot {
 }
 
 export function serializeDeterministicWorkflowNode(node: WorkflowCanvasNodeSnapshot): Record<string, unknown> {
+  if (!isDeterministicWorkflowNodeType(node.type)) {
+    // Unknown node type: lossless round-trip — persist data as-is minus the
+    // canvas UI callbacks. The title stays because it is user-visible data.
+    return {
+      id: node.id,
+      type: node.type,
+      position: { ...node.position },
+      dragHandle: node.dragHandle,
+      style: { ...(node.style || {}) },
+      data: stripWorkflowUnknownNodeDataFields(node.data),
+    }
+  }
   const { title, ...typeFields } = stripWorkflowDeterministicNodeDataFields(node.data)
   return {
     id: node.id,

@@ -1160,6 +1160,8 @@ export default {
       modelRequired: 'Узлу {node} нужна модель',
       apiModeRequired: 'Узлу {node} нужен режим API',
       inputRequired: 'Узлу {node} нужны входные данные',
+      scriptRuntimeInvalid: 'Узел {node}: неподдерживаемая среда выполнения скрипта. Поддерживается только «node».',
+      scriptCodeRequired: 'Узел {node}: перед сохранением нужно указать код скрипта',
       invalidEdge: 'Соединение ссылается на отсутствующий узел',
       invalidConnectionDirection: 'Соединения должны идти от правого выхода к левому входу',
       orphanNode: 'Узел {node} не подключён к рабочему процессу',

@@ -2651,7 +2651,7 @@ jobTriggered: 'Job ausgelost',
     },
     batch: { toggle: 'Mehrfachauswahl', selectAll: 'Alle auswählen', confirmDelete: '{count} ausgewählte Workflows löschen?', deleteSuccess: '{count} Workflows gelöscht', deletePartial: '{failed} Workflows konnten nicht gelöscht werden', deleteFailed: 'Mehrfachlöschung fehlgeschlagen' },
     validation: {
-      nodesRequired: 'Mindestens einen Knoten hinzufügen', nodeNameRequired: 'Knoten {node} benötigt einen Namen', providerRequired: 'Knoten {node} benötigt einen Anbieter', modelRequired: 'Knoten {node} benötigt ein Modell', apiModeRequired: 'Knoten {node} benötigt einen API-Modus', inputRequired: 'Knoten {node} benötigt eine Eingabe',
+      nodesRequired: 'Mindestens einen Knoten hinzufügen', nodeNameRequired: 'Knoten {node} benötigt einen Namen', providerRequired: 'Knoten {node} benötigt einen Anbieter', modelRequired: 'Knoten {node} benötigt ein Modell', apiModeRequired: 'Knoten {node} benötigt einen API-Modus', inputRequired: 'Knoten {node} benötigt eine Eingabe', scriptRuntimeInvalid: 'Knoten {node} verwendet eine nicht unterstützte Skript-Laufzeit. Nur „node“ wird unterstützt.', scriptCodeRequired: 'Knoten {node} benötigt vor dem Speichern Skript-Code',
       invalidEdge: 'Eine Verbindung verweist auf einen fehlenden Knoten', invalidConnectionDirection: 'Verbindungen müssen vom rechten Ausgang zum linken Eingang verlaufen', orphanNode: 'Knoten {node} ist nicht mit dem Workflow verbunden', disconnectedFlow: 'Der Workflow darf nicht in mehrere getrennte Abläufe aufgeteilt werden', cycle: 'Der Workflow enthält einen Zyklus. Passen Sie die Verbindungen vor dem Speichern an.',
     },
     stats: { nodes: 'Knoten', edges: 'Verbindungen' },

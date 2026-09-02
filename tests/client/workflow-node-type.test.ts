@@ -16,12 +16,16 @@ import {
   WORKFLOW_DETERMINISTIC_NODE_TYPES,
   WORKFLOW_DETERMINISTIC_PRESERVED_DATA_KEYS,
   WORKFLOW_NODE_RUNTIME_DATA_KEYS,
+  WORKFLOW_NODE_UI_ONLY_DATA_KEYS,
+  WORKFLOW_SCRIPT_NODE_RUNTIME,
+  canonicalizeScriptWorkflowNodeData,
   createDeterministicWorkflowNodeData,
   isDeterministicWorkflowNodeType,
   normalizeDeterministicWorkflowNodeData,
   normalizeWorkflowNodeFrame,
   normalizeWorkflowNodeType,
   serializeDeterministicWorkflowNode,
+  stripWorkflowUnknownNodeDataFields,
 } from '../../packages/client/src/utils/workflow-node-type'
 
 const read = (path: string) => readFileSync(path, 'utf8')
@@ -177,7 +181,7 @@ describe('workflow deterministic node serialization', () => {
     }
     const type = normalizeWorkflowNodeType(record.type)
     const frame = normalizeWorkflowNodeFrame(record, 0)
-    const canvasData = normalizeDeterministicWorkflowNodeData(record.data, record.data.title)
+    const canvasData = normalizeDeterministicWorkflowNodeData(record.data, record.data.title, type)
     const serialized = serializeDeterministicWorkflowNode({
       id: record.id,
       type,
@@ -190,6 +194,59 @@ describe('workflow deterministic node serialization', () => {
     expect(serialized.id).toBe('node-9')
     expect(serialized.position).toEqual(record.position)
     expect(serialized.data).toEqual(record.data)
+  })
+
+  it('keeps every unknown-type data field through load → save → load, including agent-conflicting keys', () => {
+    // Future node types may legitimately carry keys that collide with the
+    // agent vocabulary. None of them may be dropped on a round-trip.
+    const storedData: Record<string, unknown> = {
+      title: 'Deep dig',
+      agent: 'future-runtime',
+      model: 'future-model',
+      provider: 'future-provider',
+      skills: ['web-search'],
+      images: ['chart.png'],
+      approvalRequired: true,
+      agentMode: 'scoped',
+      depth: 3,
+      tags: ['a', 'b'],
+      payload: { nested: { deep: [1, 2, { x: null }] } },
+    }
+    // load
+    const loaded = normalizeDeterministicWorkflowNodeData(storedData, storedData.title as string, 'research')
+    expect(loaded).toEqual(storedData)
+    // save (canvas data carries UI callbacks that must not be persisted)
+    const serialized = serializeDeterministicWorkflowNode({
+      id: 'node-9',
+      type: 'research',
+      position: { x: 1, y: 2 },
+      dragHandle: '.node-header',
+      style: { width: '300px', height: '550px' },
+      data: { ...loaded, onUpdate: () => {}, onUploadImages: async () => [], status: 'failed', statusError: 'boom', readonly: false },
+    })
+    // load again and compare field by field with the original stored data
+    const reloaded = normalizeDeterministicWorkflowNodeData(serialized.data as Record<string, unknown>, storedData.title as string, 'research')
+    for (const [key, value] of Object.entries(storedData)) {
+      expect(reloaded, key).toHaveProperty(key)
+      expect(reloaded[key], key).toEqual(value)
+    }
+    expect(Object.keys(reloaded).sort()).toEqual(Object.keys(storedData).sort())
+  })
+
+  it('strips only proven canvas UI plumbing keys from unknown-type data', () => {
+    expect(WORKFLOW_NODE_UI_ONLY_DATA_KEYS).toEqual(['status', 'statusError', 'readonly', 'scriptRuntimeInvalid', 'onUpdate', 'onUploadImages'])
+    const stripped = stripWorkflowUnknownNodeDataFields({
+      title: 'Keep me',
+      status: 'failed',
+      statusError: 'transient',
+      readonly: true,
+      scriptRuntimeInvalid: true,
+      onUpdate: () => {},
+      onUploadImages: async () => [],
+      agent: 'future-runtime',
+      model: 'future-model',
+    })
+    expect(stripped).toEqual({ title: 'Keep me', agent: 'future-runtime', model: 'future-model' })
   })
 })
 
@@ -248,7 +305,7 @@ describe('workflow deterministic node creation factories', () => {
 
   it('keeps a freshly created script payload intact when the card callback is attached', () => {
     const created = createDeterministicWorkflowNodeData('script', 'Node 3')
-    const loaded = normalizeDeterministicWorkflowNodeData(created, 'Node 3')
+    const loaded = normalizeDeterministicWorkflowNodeData(created, 'Node 3', 'script')
     const serialized = serializeDeterministicWorkflowNode({
       id: 'script-3',
       type: 'script',
@@ -261,14 +318,79 @@ describe('workflow deterministic node creation factories', () => {
   })
 })
 
+describe('workflow script runtime canonicalization', () => {
+  it('flags invalid or missing runtime without rewriting the stored data', () => {
+    const invalid = canonicalizeScriptWorkflowNodeData(
+      { title: 'Run checks', runtime: 'python', code: 'print(1)', input: 'x', orchestration: { join: 'all' } },
+      'Run checks',
+    )
+    expect(invalid.scriptRuntimeInvalid).toBe(true)
+    expect(invalid.runtime).toBe('python')
+    expect(invalid.code).toBe('print(1)')
+
+    const missing = canonicalizeScriptWorkflowNodeData({ title: 'Run checks', code: 'print(1)' }, 'Run checks')
+    expect(missing.scriptRuntimeInvalid).toBe(true)
+    expect(missing).not.toHaveProperty('runtime')
+
+    expect(WORKFLOW_SCRIPT_NODE_RUNTIME).toBe('node')
+  })
+
+  it('keeps valid script data canonicalization-transparent and clears the invalid flag', () => {
+    const valid = canonicalizeScriptWorkflowNodeData(
+      { title: 'Run checks', runtime: 'node', code: 'console.log(input)', input: '', orchestration: { join: 'all' } },
+      'Run checks',
+    )
+    expect(valid.scriptRuntimeInvalid).toBe(false)
+    expect(valid).toEqual({
+      title: 'Run checks',
+      runtime: 'node',
+      code: 'console.log(input)',
+      input: '',
+      orchestration: { join: 'all' },
+      status: 'idle',
+      scriptRuntimeInvalid: false,
+    })
+  })
+
+  it('never persists the client-only invalid flag or runtime keys when saving an invalid script node', () => {
+    const canvasData = canonicalizeScriptWorkflowNodeData({ title: 'Run checks', runtime: 'python', code: 'print(1)' }, 'Run checks')
+    expect(canvasData.scriptRuntimeInvalid).toBe(true)
+    const serialized = serializeDeterministicWorkflowNode({
+      id: 'script-2',
+      type: 'script',
+      position: { x: 0, y: 0 },
+      dragHandle: '.node-header',
+      style: {},
+      data: { ...canvasData, onUpdate: () => {} } as Record<string, unknown>,
+    })
+    const data = serialized.data as Record<string, unknown>
+    expect(data.runtime).toBe('python')
+    expect(data.code).toBe('print(1)')
+    for (const runtimeKey of WORKFLOW_NODE_RUNTIME_DATA_KEYS) {
+      expect(data, runtimeKey).not.toHaveProperty(runtimeKey)
+    }
+  })
+})
+
 describe('workflow canvas type guard wiring', () => {
   it('loads stored nodes through the type-aware normalizer and keeps agent loading intact', () => {
     expect(view).toContain('const type = normalizeWorkflowNodeType(record.type)')
-    expect(view).toContain('if (type !== \'agent\') {')
-    expect(view).toContain('normalizeDeterministicWorkflowNodeData(data, title)')
+    expect(view).toContain("if (type !== 'agent') {")
+    expect(view).toContain('canonicalizeScriptWorkflowNodeData(data, title)')
+    expect(view).toContain('normalizeDeterministicWorkflowNodeData(data, title, type)')
     expect(view).toContain('normalizeWorkflowNodeFrame(record, index)')
-    expect(view).toContain('reasoningEffort: typeof data.reasoningEffort === \'string\'')
+    expect(view).toContain("reasoningEffort: typeof data.reasoningEffort === 'string'")
     expect(view).toContain("reasoningEffort: data.reasoningEffort || 'default'")
+  })
+
+  it('blocks saving when a script node violates the deterministic runtime contract', () => {
+    const validationBody = view.slice(
+      view.indexOf('function workflowValidationError()'),
+      view.indexOf('async function saveActiveWorkflow'),
+    )
+    expect(validationBody).toContain('scriptRuntimeInvalid')
+    expect(validationBody).toContain("t('workflow.validation.scriptRuntimeInvalid', { node: label })")
+    expect(validationBody).toContain('workflow.validation.scriptCodeRequired')
   })
 
   it('serializes agent nodes with the untouched baseline shape and deterministic nodes via the guard', () => {
@@ -338,7 +460,69 @@ describe('workflow canvas type guard wiring', () => {
     expect(view).toContain('const nodeId = `${type}-${nextNodeIndex.value}`')
     expect(view).toContain('/^(?:agent|script|validate|render)-(\\d+)$/')
     expect(view).toContain('if (sourceNode && !isWorkflowAgentNode(sourceNode)) {')
-    expect(view).toContain('...normalizeDeterministicWorkflowNodeData(data, title)')
+    expect(view).toContain('normalizeDeterministicWorkflowNodeData(data, title, type)')
+  })
+
+  it('surfaces the failed statusError tooltip on deterministic cards like agent cards', () => {
+    expect(card).toContain('const statusTip = computed(() => (')
+    expect(card).toContain("props.data.status === 'failed' && props.data.statusError?.trim()")
+    expect(card).toContain('<NTooltip v-if="statusTip" trigger="hover" placement="top">')
+    expect(card).toContain('<span class="node-status-tip">{{ statusTip }}</span>')
+    expect(card).toContain('.node-status-tip {')
+  })
+
+  it('defines the deterministic script validation copy in every locale', () => {
+    const expected = {
+      en: {
+        scriptRuntimeInvalid: 'Node {node} has an unsupported script runtime. Only "node" is supported.',
+        scriptCodeRequired: 'Node {node} needs script code before saving',
+      },
+      zh: {
+        scriptRuntimeInvalid: '节点 {node} 的脚本运行时不受支持，仅支持 "node"。',
+        scriptCodeRequired: '节点 {node} 需要填写脚本代码后才能保存',
+      },
+      'zh-TW': {
+        scriptRuntimeInvalid: '節點 {node} 的腳本執行環境不受支援，僅支援 "node"。',
+        scriptCodeRequired: '節點 {node} 需要填寫腳本程式碼後才能儲存',
+      },
+      ja: {
+        scriptRuntimeInvalid: 'ノード {node} のスクリプトランタイムはサポートされていません。「node」のみサポートされています。',
+        scriptCodeRequired: 'ノード {node} は保存前にスクリプトコードが必要です',
+      },
+      ko: {
+        scriptRuntimeInvalid: '노드 {node}의 스크립트 런타임이 지원되지 않습니다. "node"만 지원됩니다.',
+        scriptCodeRequired: '노드 {node}은(는) 저장하기 전에 스크립트 코드가 필요합니다',
+      },
+      fr: {
+        scriptRuntimeInvalid: 'Le nœud {node} utilise un runtime de script non pris en charge. Seul « node » est pris en charge.',
+        scriptCodeRequired: 'Le nœud {node} doit contenir le code du script avant l’enregistrement',
+      },
+      es: {
+        scriptRuntimeInvalid: 'El nodo {node} usa un entorno de ejecución de script no compatible. Solo se admite "node".',
+        scriptCodeRequired: 'El nodo {node} necesita código de script antes de guardar',
+      },
+      de: {
+        scriptRuntimeInvalid: 'Knoten {node} verwendet eine nicht unterstützte Skript-Laufzeit. Nur „node“ wird unterstützt.',
+        scriptCodeRequired: 'Knoten {node} benötigt vor dem Speichern Skript-Code',
+      },
+      pt: {
+        scriptRuntimeInvalid: 'O nó {node} usa um runtime de script não compatível. Apenas "node" é compatível.',
+        scriptCodeRequired: 'O nó {node} precisa do código do script antes de salvar',
+      },
+      ru: {
+        scriptRuntimeInvalid: 'Узел {node}: неподдерживаемая среда выполнения скрипта. Поддерживается только «node».',
+        scriptCodeRequired: 'Узел {node}: перед сохранением нужно указать код скрипта',
+      },
+      ar: {
+        scriptRuntimeInvalid: 'العقدة {node} تستخدم بيئة تشغيل غير مدعومة للسكربت. البيئة المدعومة هي "node" فقط.',
+        scriptCodeRequired: 'العقدة {node} تحتاج إلى شيفرة السكربت قبل الحفظ',
+      },
+    }
+    for (const [locale, messages] of Object.entries(localeMessages)) {
+      const expectedForLocale = expected[locale as keyof typeof expected]
+      expect(messages.workflow.validation.scriptRuntimeInvalid, `${locale}.workflow.validation.scriptRuntimeInvalid`).toBe(expectedForLocale.scriptRuntimeInvalid)
+      expect(messages.workflow.validation.scriptCodeRequired, `${locale}.workflow.validation.scriptCodeRequired`).toBe(expectedForLocale.scriptCodeRequired)
+    }
   })
 
   it('defines the deterministic node type labels in every locale', () => {

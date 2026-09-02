@@ -2651,7 +2651,7 @@ jobTriggered: 'Job acionado',
     },
     batch: { toggle: 'Seleção em lote', selectAll: 'Selecionar tudo', confirmDelete: 'Excluir os {count} Workflows selecionados?', deleteSuccess: '{count} Workflows excluídos', deletePartial: 'Falha ao excluir {failed} Workflows', deleteFailed: 'Falha na exclusão em lote' },
     validation: {
-      nodesRequired: 'Adicione pelo menos um nó', nodeNameRequired: 'O nó {node} precisa de um nome', providerRequired: 'O nó {node} precisa de um provedor', modelRequired: 'O nó {node} precisa de um modelo', apiModeRequired: 'O nó {node} precisa de um modo de API', inputRequired: 'O nó {node} precisa de uma entrada',
+      nodesRequired: 'Adicione pelo menos um nó', nodeNameRequired: 'O nó {node} precisa de um nome', providerRequired: 'O nó {node} precisa de um provedor', modelRequired: 'O nó {node} precisa de um modelo', apiModeRequired: 'O nó {node} precisa de um modo de API', inputRequired: 'O nó {node} precisa de uma entrada', scriptRuntimeInvalid: 'O nó {node} usa um runtime de script não compatível. Apenas "node" é compatível.', scriptCodeRequired: 'O nó {node} precisa do código do script antes de salvar',
       invalidEdge: 'Uma conexão referência um nó ausente', invalidConnectionDirection: 'As conexões devem ir da saída direita para a entrada esquerda', orphanNode: 'O nó {node} não está conectado ao Workflow', disconnectedFlow: 'O Workflow não pode ser dividido em vários fluxos desconectados', cycle: 'O Workflow contém um ciclo. Ajuste as conexões antes de salvar.',
     },
     stats: { nodes: 'nós', edges: 'conexões' },

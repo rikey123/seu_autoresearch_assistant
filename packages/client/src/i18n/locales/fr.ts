@@ -2651,7 +2651,7 @@ jobTriggered: 'Job declenche',
     },
     batch: { toggle: 'Sélection multiple', selectAll: 'Tout sélectionner', confirmDelete: 'Supprimer les {count} Workflows sélectionnés ?', deleteSuccess: '{count} Workflows supprimés', deletePartial: 'Échec de la suppression de {failed} Workflows', deleteFailed: 'Échec de la suppression multiple' },
     validation: {
-      nodesRequired: 'Ajoutez au moins un nœud', nodeNameRequired: 'Le nœud {node} doit avoir un nom', providerRequired: 'Le nœud {node} doit avoir un fournisseur', modelRequired: 'Le nœud {node} doit avoir un modèle', apiModeRequired: 'Le nœud {node} doit avoir un mode API', inputRequired: 'Le nœud {node} doit avoir une entrée',
+      nodesRequired: 'Ajoutez au moins un nœud', nodeNameRequired: 'Le nœud {node} doit avoir un nom', providerRequired: 'Le nœud {node} doit avoir un fournisseur', modelRequired: 'Le nœud {node} doit avoir un modèle', apiModeRequired: 'Le nœud {node} doit avoir un mode API', inputRequired: 'Le nœud {node} doit avoir une entrée', scriptRuntimeInvalid: 'Le nœud {node} utilise un runtime de script non pris en charge. Seul « node » est pris en charge.', scriptCodeRequired: 'Le nœud {node} doit contenir le code du script avant l’enregistrement',
       invalidEdge: 'Une connexion fait référence à un nœud absent', invalidConnectionDirection: 'Les connexions doivent aller de la sortie droite vers l’entrée gauche', orphanNode: 'Le nœud {node} n’est pas connecté au Workflow', disconnectedFlow: 'Le Workflow ne peut pas être divisé en plusieurs flux déconnectés', cycle: 'Le Workflow contient un cycle. Modifiez les connexions avant d’enregistrer.',
     },
     stats: { nodes: 'nœuds', edges: 'connexions' },

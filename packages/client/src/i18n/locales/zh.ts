@@ -1367,6 +1367,8 @@ export default {
       modelRequired: '节点 {node} 需要选择模型',
       apiModeRequired: '节点 {node} 需要选择 API 模式',
       inputRequired: '节点 {node} 需要填写输入内容',
+      scriptRuntimeInvalid: '节点 {node} 的脚本运行时不受支持，仅支持 "node"。',
+      scriptCodeRequired: '节点 {node} 需要填写脚本代码后才能保存',
       invalidEdge: '连接线引用了不存在的节点',
       invalidConnectionDirection: '连接线只能从右侧输出连接到左侧输入',
       orphanNode: '节点 {node} 没有连接到流程',
