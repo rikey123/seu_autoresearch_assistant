@@ -14,6 +14,11 @@ export function formatFileSize(bytes: number): string {
 }
 
 export function formatImportedAt(timestamp: number): string {
+  return formatTimestamp(timestamp)
+}
+
+/** Generic "YYYY-MM-DD HH:mm" wall-clock formatter shared by the research views. */
+export function formatTimestamp(timestamp: number): string {
   if (!Number.isFinite(timestamp) || timestamp <= 0) return ''
   const date = new Date(timestamp)
   const pad = (input: number) => String(input).padStart(2, '0')
