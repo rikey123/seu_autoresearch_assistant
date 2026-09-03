@@ -382,7 +382,8 @@ test('keeps the chat tool drawer unchanged in LTR and mirrors its resize seam in
   await mockHermesApi(page)
   await page.goto('/#/hermes/chat')
 
-  await page.locator('.header-tool-toggle').click()
+  // Scope past the VCP header toggles that share the header-tool-toggle class.
+  await page.locator('.header-tool-toggle:not(.vcp-render-toggle):not(.vcp-aesthetic-toggle)').click()
   const wrapper = page.locator('.chat-content-wrapper')
   const panel = page.locator('.chat-tool-panel')
   const handle = page.locator('.chat-tool-resize-handle')
@@ -441,7 +442,8 @@ test('shows the mobile file tree from the inline start edge in LTR and RTL', asy
   await page.goto('/#/hermes/chat')
 
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr')
-  await page.locator('.header-tool-toggle').click()
+  // Scope past the VCP header toggles that share the header-tool-toggle class.
+  await page.locator('.header-tool-toggle:not(.vcp-render-toggle):not(.vcp-aesthetic-toggle)').click()
   const panel = page.locator('.chat-tool-panel')
   const tree = panel.locator('.files-tree-panel')
   await expect(tree).toBeVisible()
@@ -466,7 +468,8 @@ test('embeds the desktop browser beside workspace and terminal', async ({ page }
   await mockHermesApi(page)
   await page.goto('/#/hermes/chat')
 
-  await page.locator('.header-tool-toggle').click()
+  // Scope past the VCP header toggles that share the header-tool-toggle class.
+  await page.locator('.header-tool-toggle:not(.vcp-render-toggle):not(.vcp-aesthetic-toggle)').click()
   const toolPanel = page.locator('.chat-tool-panel')
   await expect(toolPanel.getByRole('tab')).toHaveCount(3)
   await expect(toolPanel.getByRole('tab', { name: 'Workspace' })).toBeVisible()

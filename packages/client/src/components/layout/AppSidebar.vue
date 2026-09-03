@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { NButton, NModal, useMessage, NTag } from "naive-ui";
 import { useAppStore } from "@/stores/hermes/app";
@@ -13,14 +13,12 @@ import { changelog } from "@/data/changelog";
 import {
   getStoredUserId,
   getStoredUsername,
-  isStoredSuperAdmin,
 } from "@/api/client";
 import { clearThemeBackgroundCache } from "@/api/studio/theme";
 
 const { t } = useI18n();
 const message = useMessage();
 const route = useRoute();
-const router = useRouter();
 const appStore = useAppStore();
 const selectedKey = computed(() => {
   return route.name as string;
@@ -28,21 +26,10 @@ const selectedKey = computed(() => {
 const isResearchActive = computed(
   () => typeof route.name === "string" && route.name.startsWith("research."),
 );
-const isSuperAdmin = computed(() => isStoredSuperAdmin());
 const currentUsername = computed(() => getStoredUsername());
-const isVersionPreview = import.meta.env.VITE_HERMES_PREVIEW === "1";
-const isDesktopShell = computed(
-  () =>
-    (window as typeof window & { hermesDesktop?: { isDesktop?: boolean } })
-      .hermesDesktop?.isDesktop === true,
-);
 const showChangelog = ref(false);
 const showDockerUpdateTip = ref(false);
 const isDockerRuntime = computed(() => appStore.isDocker);
-
-function hasRoute(name: string): boolean {
-  return router.hasRoute(name);
-}
 
 function handleSidebarClick(event: MouseEvent) {
   const target = event.target instanceof Element ? event.target : null;
@@ -107,7 +94,7 @@ function handleUpdateClick() {
   >
     <nav class="sidebar-nav">
       <RouteLinkItem
-        class="nav-item"
+        class="nav-item research-entry"
         :to="{ name: 'research.workflows' }"
         :active="isResearchActive"
       >
@@ -121,18 +108,16 @@ function handleUpdateClick() {
           stroke-linecap="round"
           stroke-linejoin="round"
         >
-          <path
-            d="M10 2v6.3L4.6 17.6A2 2 0 0 0 6.4 21h11.2a2 2 0 0 0 1.8-3.4L14 8.3V2"
-          />
-          <line x1="8.5" y1="2" x2="15.5" y2="2" />
+          <path d="M9 3h6" />
+          <path d="M10 3v5.2L4.6 17.6A2 2 0 0 0 6.4 21h11.2a2 2 0 0 0 1.8-3.4L14 8.2V3" />
           <line x1="7.5" y1="14.5" x2="16.5" y2="14.5" />
         </svg>
         <span>{{ t("sidebar.research") }}</span>
       </RouteLinkItem>
       <RouteLinkItem
         class="nav-item"
-        :to="{ name: 'hermes.logs' }"
-        :active="selectedKey === 'hermes.logs'"
+        :to="{ name: 'hermes.chat' }"
+        :active="selectedKey === 'hermes.chat' || selectedKey === 'hermes.session'"
       >
         <svg
           width="16"
@@ -144,20 +129,14 @@ function handleUpdateClick() {
           stroke-linecap="round"
           stroke-linejoin="round"
         >
-          <path
-            d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-          />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="16" y1="13" x2="8" y2="13" />
-          <line x1="16" y1="17" x2="8" y2="17" />
-          <polyline points="10 9 9 9 8 9" />
+          <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
-        <span>{{ t("sidebar.logs") }}</span>
+        <span>{{ t("sidebar.chat") }}</span>
       </RouteLinkItem>
       <RouteLinkItem
         class="nav-item"
-        :to="{ name: 'hermes.usage' }"
-        :active="selectedKey === 'hermes.usage'"
+        :to="{ name: 'hermes.workflow' }"
+        :active="selectedKey === 'hermes.workflow'"
       >
         <svg
           width="16"
@@ -169,57 +148,18 @@ function handleUpdateClick() {
           stroke-linecap="round"
           stroke-linejoin="round"
         >
-          <rect x="3" y="12" width="4" height="9" rx="1" />
-          <rect x="10" y="7" width="4" height="14" rx="1" />
-          <rect x="17" y="3" width="4" height="18" rx="1" />
+          <circle cx="5" cy="12" r="3" />
+          <circle cx="19" cy="6" r="3" />
+          <circle cx="19" cy="18" r="3" />
+          <path d="M8 12h3a4 4 0 0 0 4-4V6" />
+          <path d="M8 12h3a4 4 0 0 1 4 4v2" />
         </svg>
-        <span>{{ t("sidebar.usage") }}</span>
-      </RouteLinkItem>
-      <RouteLinkItem
-        v-if="isSuperAdmin"
-        class="nav-item"
-        :to="{ name: 'hermes.performance' }"
-        :active="selectedKey === 'hermes.performance'"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-        </svg>
-        <span>{{ t("sidebar.performance") }}</span>
+        <span>{{ t("sidebar.workflow") }}</span>
       </RouteLinkItem>
       <RouteLinkItem
         class="nav-item"
-        :to="{ name: 'hermes.skillsUsage' }"
-        :active="selectedKey === 'hermes.skillsUsage'"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M21.21 15.89A10 10 0 1 1 8.11 2.79" />
-          <path d="M22 12A10 10 0 0 0 12 2v10z" />
-        </svg>
-        <span>{{ t("sidebar.skillsUsage") }}</span>
-      </RouteLinkItem>
-      <RouteLinkItem
-        v-if="isDesktopShell && hasRoute('hermes.browser')"
-        class="nav-item"
-        :to="{ name: 'hermes.browser' }"
-        :active="selectedKey === 'hermes.browser'"
+        :to="{ name: 'hermes.history' }"
+        :active="selectedKey === 'hermes.history' || selectedKey === 'hermes.historySession'"
       >
         <svg
           width="16"
@@ -232,19 +172,14 @@ function handleUpdateClick() {
           stroke-linejoin="round"
         >
           <circle cx="12" cy="12" r="9" />
-          <path d="M3 9h18" />
-          <path d="M9 3c-2 5-2 13 0 18" />
-          <path d="M15 3c2 5 2 13 0 18" />
+          <path d="M12 7v5l3 2" />
         </svg>
-        <span>{{ t("sidebar.browser") }}</span>
+        <span>{{ t("sidebar.history") }}</span>
       </RouteLinkItem>
       <RouteLinkItem
-        v-if="
-          hasRoute('hermes.versionPreview') && isSuperAdmin && !isVersionPreview
-        "
         class="nav-item"
-        :to="{ name: 'hermes.versionPreview' }"
-        :active="selectedKey === 'hermes.versionPreview'"
+        :to="{ name: 'hermes.models' }"
+        :active="selectedKey === 'hermes.models'"
       >
         <svg
           width="16"
@@ -256,83 +191,10 @@ function handleUpdateClick() {
           stroke-linecap="round"
           stroke-linejoin="round"
         >
-          <path
-            d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
-          />
-          <polyline points="7.5 4.21 12 6.81 16.5 4.21" />
-          <polyline points="7.5 19.79 7.5 14.6 3 12" />
-          <polyline points="21 12 16.5 14.6 16.5 19.79" />
-          <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-          <line x1="12" y1="22.08" x2="12" y2="12" />
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" />
         </svg>
-        <span>{{ t("sidebar.versionPreview") }}</span>
-      </RouteLinkItem>
-      <RouteLinkItem
-        class="nav-item"
-        :to="{ name: 'hermes.theme' }"
-        :active="selectedKey === 'hermes.theme'"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <circle cx="13.5" cy="6.5" r="2.5" />
-          <circle cx="17.5" cy="10.5" r="2.5" />
-          <circle cx="8.5" cy="7.5" r="2.5" />
-          <path
-            d="M12 3a9 9 0 1 0 9 9c0-1.1-.9-2-2-2h-1.2a2.8 2.8 0 0 1-2.8-2.8V5c0-1.1-.9-2-2-2h-1z"
-          />
-        </svg>
-        <span>{{ t("sidebar.theme") }}</span>
-      </RouteLinkItem>
-      <RouteLinkItem
-        class="nav-item"
-        :to="{ name: 'hermes.petdex' }"
-        :active="selectedKey === 'hermes.petdex'"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M12 3l7 4v6c0 4-3 7-7 8-4-1-7-4-7-8V7l7-4z" />
-          <path d="M9 11h.01" />
-          <path d="M15 11h.01" />
-          <path d="M9.5 15c1.6 1.1 3.4 1.1 5 0" />
-        </svg>
-        <span>{{ t("sidebar.petdex") }}</span>
-      </RouteLinkItem>
-      <RouteLinkItem
-        v-if="isSuperAdmin"
-        class="nav-item"
-        :to="{ name: 'hermes.profiles' }"
-        :active="selectedKey === 'hermes.profiles'"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-          <circle cx="12" cy="7" r="4" />
-        </svg>
-        <span>{{ t("sidebar.profiles") }}</span>
+        <span>{{ t("sidebar.models") }}</span>
       </RouteLinkItem>
       <RouteLinkItem
         class="nav-item"
@@ -403,54 +265,16 @@ function handleUpdateClick() {
         <LanguageSwitch />
       </div>
       <div class="version-info">
-        <div class="version-links">
-          <a
-            class="sidebar-footer-link"
-            href="https://github.com/EKKOLearnAI/hermes-studio"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="GitHub"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
-              />
-            </svg>
-          </a>
-          <a
-            class="sidebar-footer-link"
-            href="https://hermes-studio.ai/"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Website"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <line x1="2" y1="12" x2="22" y2="12" />
-              <path
-                d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
-              />
-            </svg>
-          </a>
-        </div>
         <span
           class="version-text"
           role="button"
           tabindex="0"
+          :title="`${t('app.name')} v${appStore.serverVersion || '0.1.0'}`"
           @click="openChangelog"
           @keydown.enter="openChangelog"
           @keydown.space.prevent="openChangelog"
         >
-          Studio v{{ appStore.serverVersion || "0.1.0" }}
+          {{ t("app.name") }} v{{ appStore.serverVersion || "0.1.0" }}
         </span>
         <ThemeSwitch />
       </div>
@@ -484,26 +308,6 @@ function handleUpdateClick() {
     </div>
 
     <div class="sidebar-top-actions">
-      <RouteLinkItem
-        class="nav-item sidebar-return-tab"
-        :to="{ name: 'hermes.chat' }"
-        :title="t('sidebar.backToChat')"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.7"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <polyline points="15 18 9 12 15 6" />
-          <line x1="9" y1="12" x2="21" y2="12" />
-        </svg>
-        <span>{{ t("sidebar.backToChat") }}</span>
-      </RouteLinkItem>
       <button
         class="collapse-btn"
         @click="appStore.toggleSidebarCollapsed()"
@@ -648,20 +452,24 @@ function handleUpdateClick() {
   }
 }
 
+// Product entry point: keep the research workbench visually prominent at the
+// top of the navigation.
+.research-entry {
+  font-weight: 600;
+
+  svg {
+    color: $accent-primary;
+  }
+}
+
 .sidebar-top-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid $border-color;
-}
-
-.sidebar-return-tab {
-  flex: 1;
-  min-width: 0;
-  padding: 8px 10px;
-  font-size: 13px;
 }
 
 .sidebar-footer {
@@ -749,28 +557,13 @@ function handleUpdateClick() {
   overflow: hidden;
 }
 
-.version-links {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 6px;
-}
-
-.sidebar-footer-link {
-  color: $text-muted;
-  display: flex;
-  align-items: center;
-  transition: color $transition-fast;
-
-  &:hover {
-    color: $text-primary;
-  }
-}
-
 .version-text {
-  flex: 0 0 auto;
-  overflow: visible;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: start;
   cursor: pointer;
   transition: color $transition-fast;
 
@@ -861,12 +654,6 @@ function handleUpdateClick() {
     gap: 6px;
     margin-top: 8px;
     padding-top: 8px;
-  }
-
-  .sidebar-return-tab {
-    width: 100%;
-    flex: 0 0 auto;
-    padding: 10px 4px;
   }
 
   .nav-item {

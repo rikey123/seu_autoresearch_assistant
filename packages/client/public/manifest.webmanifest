@@ -1,8 +1,8 @@
 {
-  "name": "Hermes Studio",
-  "short_name": "Hermes",
-  "description": "Self-hosted AI chat dashboard for Hermes Agent",
-  "start_url": "/#/hermes/chat",
+  "name": "SEU科研工作台",
+  "short_name": "科研工作台",
+  "description": "SEU Research Workbench — literature, workflows, and AI-assisted research",
+  "start_url": "/#/research/workflows",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f7f7f4",

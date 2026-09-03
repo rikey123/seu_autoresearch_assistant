@@ -1,6 +1,9 @@
 import { socialMessagesRu } from '../social-messages-locales'
 
 export default {
+  app: {
+    name: 'SEU Научная рабочая среда',
+  },
   ekkoConfig: {
     "settingsTitle": "Настройки",
     "settingsRuntime": "Выполнение",
@@ -132,7 +135,7 @@ export default {
   },
   socialMessages: socialMessagesRu,
   browser: {
-    title: 'Браузер', settings: 'Настройки браузера', desktopOnly: 'Встроенный браузер доступен только в Hermes Studio Desktop.', newTab: 'Новая вкладка',
+    title: 'Браузер', settings: 'Настройки браузера', desktopOnly: 'Встроенный браузер доступен только в SEU Научная рабочая среда Desktop.', newTab: 'Новая вкладка',
     back: 'Назад', forward: 'Вперёд', reload: 'Обновить', stop: 'Остановить', addressPlaceholder: 'Поиск или адрес',
     selectElement: 'Выбрать элемент', selectRegion: 'Выбрать область', annotationPlaceholder: 'Опишите, что Agent должен проверить или изменить…', selectionData: 'Данные выбора браузера', annotationAdded: 'Снимок добавлен в поле чата', annotationCount: 'Аннотаций: {count}', annotationLabel: 'Аннотация {index}', clearAnnotations: 'Очистить аннотации', finishAnnotation: 'Готово',
     agent: 'Agent', agentControlling: '{agent} управляет вкладкой', agentWaiting: '{agent} ожидает вашего подтверждения', takeOver: 'Перехватить', tabCrashed: 'Эта вкладка аварийно завершилась.', recoverTab: 'Перезагрузить', profiles: 'Профили', profileName: 'Имя профиля', addProfile: 'Добавить профиль', currentProfile: 'Активный профиль', switchProfile: 'Сменить профиль', editProfile: 'Изменить профиль',
@@ -143,7 +146,7 @@ export default {
   },
 
   login: {
-    title: 'Hermes Studio',
+    title: 'SEU Научная рабочая среда',
     description: 'Введите имя пользователя и пароль для продолжения.',
     placeholder: 'Токен доступа',
     submit: 'Войти',
@@ -569,8 +572,8 @@ export default {
     dataDirectoryEnvMacos: 'macOS (настольное приложение / терминал)',
     dataDirectoryEnvLinux: 'Linux (среда входа)',
     dataDirectoryEnvDocker: 'Docker Compose',
-    dataDirectoryEnvRestart: 'После изменения полностью закройте Hermes Studio и откройте снова. Если приложение в Windows или Linux всё ещё видит старое значение, выйдите из системы и войдите снова.',
-    cliUpdateDescription: 'В Hermes Runtime версии 0.19.1 и новее следующая команда обновляет только встроенный Hermes Agent. Она не обновляет настольное приложение Hermes Studio или Web UI. Перед выполнением полностью закройте Hermes Studio:',
+    dataDirectoryEnvRestart: 'После изменения полностью закройте SEU Научная рабочая среда и откройте снова. Если приложение в Windows или Linux всё ещё видит старое значение, выйдите из системы и войдите снова.',
+    cliUpdateDescription: 'В Hermes Runtime версии 0.19.1 и новее следующая команда обновляет только встроенный Hermes Agent. Она не обновляет настольное приложение SEU Научная рабочая среда или Web UI. Перед выполнением полностью закройте SEU Научная рабочая среда:',
     webUiTitle: 'Web UI',
     platform: 'Платформа',
     currentWebUi: 'Текущий Web UI',
@@ -579,10 +582,10 @@ export default {
     chooseRuntimeDirectory: 'Выбрать каталог',
     resetRuntimeDirectory: 'Системный каталог',
     runtimeDirectoryHint: 'При следующем перезапуске текущий Runtime будет скопирован и проверен до запуска локальных сервисов. Старое хранилище сохранится, а будущие загрузки Runtime будут помещаться сюда.',
-    runtimeDirectorySaved: 'Миграция Runtime запланирована. Перезапустите Hermes Studio, чтобы выполнить ее.',
+    runtimeDirectorySaved: 'Миграция Runtime запланирована. Перезапустите SEU Научная рабочая среда, чтобы выполнить ее.',
     runtimeMigrationPending: 'Ожидаемое место миграции: {directory}',
     runtimeMigrationFailed: 'Перенос хранилища не выполнен; продолжает использоваться прежнее хранилище',
-    runtimeActivationFailed: 'Выбранный Runtime не удалось запустить; Hermes Studio использует другую установленную версию',
+    runtimeActivationFailed: 'Выбранный Runtime не удалось запустить; SEU Научная рабочая среда использует другую установленную версию',
     active: 'Активна',
     installed: 'Установлена',
     download: 'Скачать',
@@ -601,7 +604,7 @@ export default {
     remoteLoadFailed: 'Не удалось загрузить удаленные версии',
     downloadTasks: 'Задачи загрузки',
     downloadStarted: 'Загрузка начата',
-    activateSuccess: 'Выбор версии сохранен. Перезапустите Hermes Studio, чтобы применить его.',
+    activateSuccess: 'Выбор версии сохранен. Перезапустите SEU Научная рабочая среда, чтобы применить его.',
     restartPromptTitle: 'Runtime готов',
     restartPromptContent: 'Hermes Runtime {version} установлен. Перезапустить сейчас, чтобы использовать его?',
     restartLater: 'Позже',
@@ -1038,7 +1041,7 @@ export default {
     },
     showToolCalls: 'Показать вызовы инструментов',
     pushEnabled: 'Включить отправку',
-    pushNotConfigured: 'Перед включением настройте push-уведомления в разделе «Подключение устройств» Hermes Studio.',
+    pushNotConfigured: 'Перед включением настройте push-уведомления в разделе «Подключение устройств» SEU Научная рабочая среда.',
     hideToolCalls: 'Скрыть вызовы инструментов',
     messageQueue: 'Очередь сообщений',
     removeQueuedMessage: 'Удалить сообщение из очереди',
@@ -2368,7 +2371,7 @@ export default {
       notifyOnApprovalTestFailed: 'Failed to send approval notification',
       approvalNotificationTitle: 'Approval required',
       approvalNotificationClarifyTitle: 'Clarification required',
-      approvalNotificationBody: 'Open Hermes Studio to review and respond.',
+      approvalNotificationBody: 'Open SEU Научная рабочая среда to review and respond.',
       notifyOnCompleteHint: 'Показывать системное уведомление по окончании ответа AI',
       notifyOnCompleteMacHint: 'В macOS разрешите уведомления браузера в системных настройках.',
       notifyOnCompleteDenied: 'Разрешение на уведомления отклонено',

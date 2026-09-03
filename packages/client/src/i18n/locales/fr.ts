@@ -1,6 +1,9 @@
 import { socialMessagesFr } from '../social-messages-locales'
 
 export default {
+  app: {
+    name: 'SEU Research Workbench',
+  },
   ekkoConfig: {
     "settingsTitle": "Paramètres",
     "settingsRuntime": "Exécution",
@@ -132,7 +135,7 @@ export default {
   },
   socialMessages: socialMessagesFr,
   browser: {
-    title: 'Navigateur', settings: 'Paramètres du navigateur', desktopOnly: 'Le navigateur intégré est disponible uniquement dans Hermes Studio Desktop.', newTab: 'Nouvel onglet',
+    title: 'Navigateur', settings: 'Paramètres du navigateur', desktopOnly: 'Le navigateur intégré est disponible uniquement dans SEU Research Workbench Desktop.', newTab: 'Nouvel onglet',
     back: 'Précédent', forward: 'Suivant', reload: 'Actualiser', stop: 'Arrêter', addressPlaceholder: 'Rechercher ou saisir une adresse',
     selectElement: 'Sélectionner un élément', selectRegion: 'Sélectionner une zone', annotationPlaceholder: 'Décrivez ce que l’Agent doit examiner ou modifier…', selectionData: 'Données de sélection du navigateur', annotationAdded: 'Capture ajoutée à la zone de discussion', annotationCount: '{count} annotation(s)', annotationLabel: 'Annotation {index}', clearAnnotations: 'Effacer les annotations', finishAnnotation: 'Terminé',
     agent: 'Agent', agentControlling: '{agent} contrôle cet onglet', agentWaiting: '{agent} attend votre confirmation', takeOver: 'Reprendre', tabCrashed: 'Cet onglet a planté.', recoverTab: 'Recharger', profiles: 'Profils', profileName: 'Nom du profil', addProfile: 'Ajouter un profil', currentProfile: 'Profil actif', switchProfile: 'Changer de profil', editProfile: 'Modifier le profil',
@@ -155,7 +158,7 @@ export default {
   },
   // Login
   login: {
-    title: 'Hermes Studio',
+    title: 'SEU Research Workbench',
     description: 'Entrez votre nom d\'utilisateur et votre mot de passe pour continuer.',
     placeholder: 'Jeton d\'acces',
     submit: 'Connexion',
@@ -659,8 +662,8 @@ export default {
     dataDirectoryEnvMacos: 'macOS (bureau / terminal)',
     dataDirectoryEnvLinux: 'Linux (environnement de connexion)',
     dataDirectoryEnvDocker: 'Docker Compose',
-    dataDirectoryEnvRestart: 'Après la modification, quittez complètement Hermes Studio puis rouvrez-le. Sous Windows ou Linux, déconnectez-vous puis reconnectez-vous si l’application de bureau voit encore l’ancienne valeur.',
-    cliUpdateDescription: 'Avec Hermes Runtime 0.19.1 et versions ultérieures, la commande suivante met uniquement à jour le Hermes Agent intégré. Elle ne met pas à jour l’application de bureau Hermes Studio ni la Web UI. Quittez complètement Hermes Studio avant de l’exécuter :',
+    dataDirectoryEnvRestart: 'Après la modification, quittez complètement SEU Research Workbench puis rouvrez-le. Sous Windows ou Linux, déconnectez-vous puis reconnectez-vous si l’application de bureau voit encore l’ancienne valeur.',
+    cliUpdateDescription: 'Avec Hermes Runtime 0.19.1 et versions ultérieures, la commande suivante met uniquement à jour le Hermes Agent intégré. Elle ne met pas à jour l’application de bureau SEU Research Workbench ni la Web UI. Quittez complètement SEU Research Workbench avant de l’exécuter :',
     webUiTitle: 'Web UI',
     platform: 'Plateforme',
     currentWebUi: 'Web UI actuel',
@@ -669,10 +672,10 @@ export default {
     chooseRuntimeDirectory: 'Choisir un répertoire',
     resetRuntimeDirectory: 'Utiliser le dossier système',
     runtimeDirectoryHint: 'Le Runtime actuel sera copié et vérifié avant les services locaux au prochain redémarrage. L’ancien stockage est conservé et les prochains téléchargements de Runtime seront enregistrés ici.',
-    runtimeDirectorySaved: 'Migration du Runtime planifiée. Redémarrez Hermes Studio pour l’exécuter.',
+    runtimeDirectorySaved: 'Migration du Runtime planifiée. Redémarrez SEU Research Workbench pour l’exécuter.',
     runtimeMigrationPending: 'Destination de migration en attente : {directory}',
     runtimeMigrationFailed: 'Échec de la migration du stockage ; le stockage précédent reste actif',
-    runtimeActivationFailed: 'Le Runtime sélectionné n’a pas pu démarrer ; Hermes Studio utilise une autre version installée',
+    runtimeActivationFailed: 'Le Runtime sélectionné n’a pas pu démarrer ; SEU Research Workbench utilise une autre version installée',
     active: 'Active',
     installed: 'Installée',
     download: 'Télécharger',
@@ -691,7 +694,7 @@ export default {
     remoteLoadFailed: 'Impossible de charger les versions distantes',
     downloadTasks: 'Tâches de téléchargement',
     downloadStarted: 'Téléchargement démarré',
-    activateSuccess: 'Sélection de version enregistrée. Redémarrez Hermes Studio pour l’utiliser.',
+    activateSuccess: 'Sélection de version enregistrée. Redémarrez SEU Research Workbench pour l’utiliser.',
     restartPromptTitle: 'Runtime prêt',
     restartPromptContent: 'Hermes Runtime {version} a été installé. Redémarrer maintenant pour l’utiliser ?',
     restartLater: 'Plus tard',
@@ -1109,7 +1112,7 @@ export default {
     },
     showToolCalls: 'Afficher les appels d’outils',
     pushEnabled: 'Activer l’envoi',
-    pushNotConfigured: 'Configurez les notifications dans « Connexions d’appareils » de Hermes Studio avant de les activer.',
+    pushNotConfigured: 'Configurez les notifications dans « Connexions d’appareils » de SEU Research Workbench avant de les activer.',
     hideToolCalls: 'Masquer les appels d’outils',
     messageQueue: 'File de messages',
     removeQueuedMessage: 'Retirer le message de la file',
@@ -2087,7 +2090,7 @@ jobTriggered: 'Job declenche',
       notifyOnApprovalTestFailed: 'Failed to send approval notification',
       approvalNotificationTitle: 'Approval required',
       approvalNotificationClarifyTitle: 'Clarification required',
-      approvalNotificationBody: 'Open Hermes Studio to review and respond.',
+      approvalNotificationBody: 'Open SEU Research Workbench to review and respond.',
       notifyOnCompleteHint: 'Afficher une notification systeme lorsque l\'IA a termine',
       notifyOnCompleteMacHint: 'Sur macOS, autorisez les notifications du navigateur dans Reglages Systeme.',
       notifyOnCompleteDenied: 'Autorisation de notification refusee',

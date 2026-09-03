@@ -10,10 +10,12 @@ describe('Agent Manager routing', () => {
     const manager = readFileSync('packages/client/src/views/hermes/AgentManagerView.vue', 'utf8')
     const router = readFileSync('packages/client/src/router/index.ts', 'utf8')
 
-    expect(sidebar.indexOf("t('sidebar.agentManager')"))
-      .toBeGreaterThan(sidebar.indexOf("t('sidebar.connections')"))
-    expect(sidebar.indexOf("t('sidebar.models')"))
-      .toBeGreaterThan(sidebar.indexOf("t('sidebar.agentManager')"))
+    // P9 navigation slimming: the Agent Manager and connections entries are
+    // gone from the page sidebar while their routes (and this page) remain
+    // reachable via deep links.
+    expect(sidebar).not.toContain("t('sidebar.agentManager')")
+    expect(sidebar).not.toContain("t('sidebar.connections')")
+    expect(sidebar).toContain("t('sidebar.models')")
     const routeStart = router.indexOf("path: '/studio/agents'")
     const route = router.slice(routeStart, router.indexOf("path: '/hermes/group-chat'", routeStart))
     expect(route).toContain("path: '/studio/agents'")
@@ -26,7 +28,7 @@ describe('Agent Manager routing', () => {
     expect(router).toContain("redirect: { name: 'hermes.agentManager' }")
     expect(router).not.toContain('CodingAgentsView.vue')
     expect(appSidebar).not.toContain("hermes.codingAgents")
-    expect(appSidebar).not.toContain("hermes.models")
+    expect(appSidebar).toContain("hermes.models")
     expect(manager).not.toContain("hermes.codingAgents")
     expect(manager).not.toContain("agentManager.configure")
     expect(manager).not.toContain('PageSidebarNav')

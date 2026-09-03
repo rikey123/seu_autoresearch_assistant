@@ -7,7 +7,7 @@ test('redirects protected routes to the login screen without a token', async ({ 
   await page.goto('/#/hermes/jobs')
 
   await expect(page).toHaveURL(/#\/\?redirect=\/hermes\/jobs$/)
-  await expect(page.getByRole('heading', { name: 'Hermes Studio' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'SEU Research Workbench' })).toBeVisible()
   await expect(page.getByPlaceholder('Username')).toBeVisible()
   await expect(page.getByPlaceholder('Password')).toBeVisible()
   expect(api.unexpectedRequests).toEqual([])
@@ -35,7 +35,7 @@ test('logs in with password through the BFF before entering the app', async ({ p
   await page.getByPlaceholder('Password').fill('correct-password')
   await page.getByRole('button', { name: 'Login' }).click()
 
-  await expect(page).toHaveURL(/#\/hermes\/chat$/)
+  await expect(page).toHaveURL(/#\/research\/workflows$/)
   await expect(page.evaluate(() => window.localStorage.getItem('hermes_api_key'))).resolves.toBe(TEST_ACCESS_KEY)
   await expect.poll(() => api.requests.some((request) => request.pathname === '/health')).toBe(true)
 

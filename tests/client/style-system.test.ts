@@ -87,11 +87,11 @@ describe('client style system', () => {
     expect(historyMessageList).toContain('animation: history-message-surface-fade-in 1.5s ease both;')
   })
 
-  it('keeps the four-way conversation switch active state visible in dark mode', () => {
+  it('keeps the three-way conversation switch active state visible in dark mode', () => {
     const pageSidebarNav = readClientFile('components/layout/PageSidebarNav.vue')
 
     expect(pageSidebarNav).toContain(
-      ':global(.dark .conversation-switch--four .conversation-switch-tab.active)',
+      ':global(.dark .conversation-switch--three .conversation-switch-tab.active)',
     )
     expect(pageSidebarNav).toContain('background: $bg-card-hover;')
     expect(pageSidebarNav).toContain('inset 0 0 0 1px $border-color')

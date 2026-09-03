@@ -108,6 +108,8 @@ describe('desktop browser chat panel gate', () => {
     expect(settingsPage).not.toContain('class="active-profile-select"')
     expect(settingsPage).not.toContain('native-viewport')
     expect(settingsPage).not.toContain('navigationAction')
-    expect(sidebar).toContain("hermes.browser")
+    // P9 slimming: the desktop browser entry left the app sidebar; the
+    // settings-only page stays reachable via its route.
+    expect(sidebar).not.toContain("hermes.browser")
   })
 })

@@ -1,6 +1,9 @@
 import { socialMessagesEs } from '../social-messages-locales'
 
 export default {
+  app: {
+    name: 'SEU Research Workbench',
+  },
   ekkoConfig: {
     "settingsTitle": "Configuración",
     "settingsRuntime": "Ejecución",
@@ -132,7 +135,7 @@ export default {
   },
   socialMessages: socialMessagesEs,
   browser: {
-    title: 'Navegador', settings: 'Ajustes del navegador', desktopOnly: 'El navegador integrado solo está disponible en Hermes Studio Desktop.', newTab: 'Nueva pestaña',
+    title: 'Navegador', settings: 'Ajustes del navegador', desktopOnly: 'El navegador integrado solo está disponible en SEU Research Workbench Desktop.', newTab: 'Nueva pestaña',
     back: 'Atrás', forward: 'Adelante', reload: 'Recargar', stop: 'Detener', addressPlaceholder: 'Buscar o escribir una dirección',
     selectElement: 'Seleccionar elemento', selectRegion: 'Seleccionar región', annotationPlaceholder: 'Describe qué debe revisar o cambiar el Agent…', selectionData: 'Datos de selección del navegador', annotationAdded: 'Captura añadida al cuadro de chat', annotationCount: '{count} anotación(es)', annotationLabel: 'Anotación {index}', clearAnnotations: 'Borrar anotaciones', finishAnnotation: 'Listo',
     agent: 'Agent', agentControlling: '{agent} controla esta pestaña', agentWaiting: '{agent} espera tu confirmación', takeOver: 'Tomar control', tabCrashed: 'Esta pestaña falló.', recoverTab: 'Recargar pestaña', profiles: 'Perfiles', profileName: 'Nombre del perfil', addProfile: 'Añadir perfil', currentProfile: 'Perfil activo', switchProfile: 'Cambiar perfil', editProfile: 'Editar perfil',
@@ -155,7 +158,7 @@ export default {
   },
   // Login
   login: {
-    title: 'Hermes Studio',
+    title: 'SEU Research Workbench',
     description: 'Introduce tu nombre de usuario y contrasena para continuar.',
     placeholder: 'Token de acceso',
     submit: 'Iniciar sesion',
@@ -659,8 +662,8 @@ export default {
     dataDirectoryEnvMacos: 'macOS (escritorio / terminal)',
     dataDirectoryEnvLinux: 'Linux (entorno de inicio de sesión)',
     dataDirectoryEnvDocker: 'Docker Compose',
-    dataDirectoryEnvRestart: 'Después del cambio, cierra Hermes Studio por completo y vuelve a abrirlo. En Windows o Linux, cierra sesión y vuelve a iniciarla si la aplicación de escritorio sigue viendo el valor anterior.',
-    cliUpdateDescription: 'En Hermes Runtime 0.19.1 y posteriores, el siguiente comando solo actualiza el Hermes Agent integrado. No actualiza la aplicación de escritorio Hermes Studio ni la Web UI. Cierra Hermes Studio por completo antes de ejecutarlo:',
+    dataDirectoryEnvRestart: 'Después del cambio, cierra SEU Research Workbench por completo y vuelve a abrirlo. En Windows o Linux, cierra sesión y vuelve a iniciarla si la aplicación de escritorio sigue viendo el valor anterior.',
+    cliUpdateDescription: 'En Hermes Runtime 0.19.1 y posteriores, el siguiente comando solo actualiza el Hermes Agent integrado. No actualiza la aplicación de escritorio SEU Research Workbench ni la Web UI. Cierra SEU Research Workbench por completo antes de ejecutarlo:',
     webUiTitle: 'Web UI',
     platform: 'Plataforma',
     currentWebUi: 'Web UI actual',
@@ -669,10 +672,10 @@ export default {
     chooseRuntimeDirectory: 'Elegir directorio',
     resetRuntimeDirectory: 'Usar valor del sistema',
     runtimeDirectoryHint: 'El Runtime actual se copiará y verificará antes de iniciar los servicios locales en el próximo reinicio. El almacenamiento anterior se conserva y las futuras descargas de Runtime se guardan aquí.',
-    runtimeDirectorySaved: 'Migración de Runtime programada. Reinicia Hermes Studio para ejecutarla.',
+    runtimeDirectorySaved: 'Migración de Runtime programada. Reinicia SEU Research Workbench para ejecutarla.',
     runtimeMigrationPending: 'Destino de migración pendiente: {directory}',
     runtimeMigrationFailed: 'La migración del almacenamiento falló; se sigue usando el almacenamiento anterior',
-    runtimeActivationFailed: 'No se pudo iniciar el Runtime seleccionado; Hermes Studio está usando otra versión instalada',
+    runtimeActivationFailed: 'No se pudo iniciar el Runtime seleccionado; SEU Research Workbench está usando otra versión instalada',
     active: 'Activa',
     installed: 'Instalada',
     download: 'Descargar',
@@ -691,7 +694,7 @@ export default {
     remoteLoadFailed: 'No se pudieron cargar las versiones remotas',
     downloadTasks: 'Tareas de descarga',
     downloadStarted: 'Descarga iniciada',
-    activateSuccess: 'Selección de versión guardada. Reinicia Hermes Studio para usarla.',
+    activateSuccess: 'Selección de versión guardada. Reinicia SEU Research Workbench para usarla.',
     restartPromptTitle: 'Runtime listo',
     restartPromptContent: 'Hermes Runtime {version} se ha instalado. ¿Reiniciar ahora para usarlo?',
     restartLater: 'Más tarde',
@@ -1109,7 +1112,7 @@ export default {
     },
     showToolCalls: 'Mostrar llamadas de herramientas',
     pushEnabled: 'Activar envío',
-    pushNotConfigured: 'Configura las notificaciones en «Conexiones de dispositivos» de Hermes Studio antes de activarlas.',
+    pushNotConfigured: 'Configura las notificaciones en «Conexiones de dispositivos» de SEU Research Workbench antes de activarlas.',
     hideToolCalls: 'Ocultar llamadas de herramientas',
     messageQueue: 'Cola de mensajes',
     removeQueuedMessage: 'Quitar mensaje de la cola',
@@ -2087,7 +2090,7 @@ jobTriggered: 'Job ejecutado',
       notifyOnApprovalTestFailed: 'Failed to send approval notification',
       approvalNotificationTitle: 'Approval required',
       approvalNotificationClarifyTitle: 'Clarification required',
-      approvalNotificationBody: 'Open Hermes Studio to review and respond.',
+      approvalNotificationBody: 'Open SEU Research Workbench to review and respond.',
       notifyOnCompleteHint: 'Mostrar una notificacion del sistema cuando la IA termina',
       notifyOnCompleteMacHint: 'En macOS, permite las notificaciones del navegador en Ajustes del Sistema.',
       notifyOnCompleteDenied: 'Permiso de notificacion denegado',

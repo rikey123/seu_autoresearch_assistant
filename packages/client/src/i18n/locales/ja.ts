@@ -1,6 +1,9 @@
 import { socialMessagesJa } from '../social-messages-locales'
 
 export default {
+  app: {
+    name: 'SEU研究ワークベンチ',
+  },
   ekkoConfig: {
     "settingsTitle": "設定",
     "settingsRuntime": "ランタイム",
@@ -132,7 +135,7 @@ export default {
   },
   socialMessages: socialMessagesJa,
   browser: {
-    title: 'ブラウザー', settings: 'ブラウザー設定', desktopOnly: '内蔵ブラウザーは Hermes Studio Desktop でのみ利用できます。', newTab: '新しいタブ',
+    title: 'ブラウザー', settings: 'ブラウザー設定', desktopOnly: '内蔵ブラウザーは SEU研究ワークベンチ Desktop でのみ利用できます。', newTab: '新しいタブ',
     back: '戻る', forward: '進む', reload: '再読み込み', stop: '停止', addressPlaceholder: '検索またはアドレスを入力',
     selectElement: '要素を選択', selectRegion: '範囲を選択', annotationPlaceholder: 'Agent に確認または変更してほしい内容を入力…', selectionData: 'ブラウザー選択データ', annotationAdded: 'スクリーンショットをチャット入力欄に追加しました', annotationCount: '{count} 件の注釈', annotationLabel: '注釈 {index}', clearAnnotations: '注釈を消去', finishAnnotation: '完了',
     agent: 'Agent', agentControlling: '{agent} がこのタブを操作中', agentWaiting: '{agent} が確認を待っています', takeOver: '引き継ぐ', tabCrashed: 'このタブはクラッシュしました。', recoverTab: '再読み込み', profiles: 'プロファイル', profileName: 'プロファイル名', addProfile: 'プロファイルを追加', currentProfile: '使用中', switchProfile: '切り替える', editProfile: 'プロファイルを編集',
@@ -155,7 +158,7 @@ export default {
   },
   // ログイン
   login: {
-    title: 'Hermes Studio',
+    title: 'SEU研究ワークベンチ',
     description: 'ユーザー名とパスワードを入力して続行してください。',
     placeholder: 'アクセストークン',
     submit: 'ログイン',
@@ -659,8 +662,8 @@ export default {
     dataDirectoryEnvMacos: 'macOS（デスクトップ / ターミナル）',
     dataDirectoryEnvLinux: 'Linux（ログイン環境）',
     dataDirectoryEnvDocker: 'Docker Compose',
-    dataDirectoryEnvRestart: '変更後は Hermes Studio を完全に終了して再度開いてください。Windows または Linux のデスクトップアプリで古い値が残る場合は、サインアウトして再度サインインしてください。',
-    cliUpdateDescription: 'Hermes Runtime 0.19.1 以降では、次のコマンドで内蔵 Hermes Agent のみを更新できます。Hermes Studio デスクトップアプリや Web UI は更新されません。実行前に Hermes Studio を完全に終了してください：',
+    dataDirectoryEnvRestart: '変更後は SEU研究ワークベンチ を完全に終了して再度開いてください。Windows または Linux のデスクトップアプリで古い値が残る場合は、サインアウトして再度サインインしてください。',
+    cliUpdateDescription: 'Hermes Runtime 0.19.1 以降では、次のコマンドで内蔵 Hermes Agent のみを更新できます。SEU研究ワークベンチ デスクトップアプリや Web UI は更新されません。実行前に SEU研究ワークベンチ を完全に終了してください：',
     webUiTitle: 'Web UI',
     platform: 'プラットフォーム',
     currentWebUi: '現在の Web UI',
@@ -669,10 +672,10 @@ export default {
     chooseRuntimeDirectory: 'ディレクトリを選択',
     resetRuntimeDirectory: 'システム既定に戻す',
     runtimeDirectoryHint: '次回再起動時にローカルサービスの起動前に現在の Runtime をコピーして検証します。元の保存先は保持され、今後の Runtime ダウンロードもここに保存されます。',
-    runtimeDirectorySaved: 'Runtime の移行を予約しました。Hermes Studio を再起動すると実行されます。',
+    runtimeDirectorySaved: 'Runtime の移行を予約しました。SEU研究ワークベンチ を再起動すると実行されます。',
     runtimeMigrationPending: '移行先：{directory}',
     runtimeMigrationFailed: '保存先の移行に失敗したため、以前の保存先を引き続き使用します',
-    runtimeActivationFailed: '選択した Runtime を起動できなかったため、Hermes Studio は別のインストール済みバージョンを使用しています',
+    runtimeActivationFailed: '選択した Runtime を起動できなかったため、SEU研究ワークベンチ は別のインストール済みバージョンを使用しています',
     active: '有効',
     installed: 'インストール済み',
     download: 'ダウンロード',
@@ -691,7 +694,7 @@ export default {
     remoteLoadFailed: 'リモートバージョンの読み込みに失敗しました',
     downloadTasks: 'ダウンロードタスク',
     downloadStarted: 'ダウンロードを開始しました',
-    activateSuccess: 'バージョン選択を保存しました。Hermes Studio を再起動すると反映されます。',
+    activateSuccess: 'バージョン選択を保存しました。SEU研究ワークベンチ を再起動すると反映されます。',
     restartPromptTitle: 'Runtime の準備が完了しました',
     restartPromptContent: 'Hermes Runtime {version} がインストールされました。今すぐ再起動して使用しますか？',
     restartLater: '後で',
@@ -1109,7 +1112,7 @@ export default {
     },
     showToolCalls: 'ツール呼び出しを表示',
     pushEnabled: 'プッシュ通知を有効化',
-    pushNotConfigured: '有効にする前に、Hermes Studio の「デバイス接続」でメッセージプッシュを設定してください。',
+    pushNotConfigured: '有効にする前に、SEU研究ワークベンチ の「デバイス接続」でメッセージプッシュを設定してください。',
     hideToolCalls: 'ツール呼び出しを非表示',
     messageQueue: 'メッセージキュー',
     removeQueuedMessage: 'キューのメッセージを削除',
@@ -2087,7 +2090,7 @@ export default {
       notifyOnApprovalTestFailed: 'Failed to send approval notification',
       approvalNotificationTitle: 'Approval required',
       approvalNotificationClarifyTitle: 'Clarification required',
-      approvalNotificationBody: 'Open Hermes Studio to review and respond.',
+      approvalNotificationBody: 'Open SEU研究ワークベンチ to review and respond.',
       notifyOnCompleteHint: 'AI の応答完了時にシステム通知を表示',
       notifyOnCompleteMacHint: 'macOS ではシステム設定でブラウザ通知を許可してください。',
       notifyOnCompleteDenied: '通知権限が拒否されました',

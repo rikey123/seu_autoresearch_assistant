@@ -141,7 +141,11 @@ describe("AppSidebar navigation", () => {
 
     expect(wrapper.text()).not.toContain("sidebar.search");
     expect(wrapper.text()).not.toContain("sidebar.reloadClientVersion");
-    expect(wrapper.find(".sidebar-return-tab").exists()).toBe(true);
+    // P9 slimming: the back-to-chat quick action is gone now that single chat
+    // is a permanent sidebar entry next to the research workbench.
+    expect(wrapper.find(".sidebar-return-tab").exists()).toBe(false);
+    expect(wrapper.text()).toContain("sidebar.research");
+    expect(wrapper.text()).toContain("sidebar.chat");
   });
 
   it("does not show the legacy version management entry in the desktop shell", () => {
@@ -209,11 +213,22 @@ describe("AppSidebar navigation", () => {
     expect(navigationLabels).not.toContain("sidebar.mcp");
     expect(navigationLabels).not.toContain("sidebar.skills");
     expect(navigationLabels).not.toContain("sidebar.journey");
-    expect(wrapper.text()).toContain("sidebar.theme");
-    expect(wrapper.text().indexOf("sidebar.petdex")).toBeGreaterThan(
-      wrapper.text().indexOf("sidebar.theme"),
-    );
+    // P9 slimming: pets, theme, and other non-workbench entries leave the nav
+    // while the kept product entries stay in order.
+    expect(wrapper.text()).not.toContain("sidebar.theme");
+    expect(wrapper.text()).not.toContain("sidebar.petdex");
     expect(wrapper.text()).not.toContain("sidebar.devices");
+    const keptLabels = wrapper
+      .findAllComponents({ name: "RouteLinkItem" })
+      .map((item) => item.text().trim());
+    expect(keptLabels).toEqual([
+      "sidebar.research",
+      "sidebar.chat",
+      "sidebar.workflow",
+      "sidebar.history",
+      "sidebar.models",
+      "sidebar.settings",
+    ]);
   });
 
   it("uses the regular update button to open Docker upgrade guidance", async () => {

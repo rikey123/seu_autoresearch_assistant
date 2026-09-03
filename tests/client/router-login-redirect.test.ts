@@ -36,7 +36,7 @@ describe('router login redirect', () => {
     await router.push('/')
     await router.isReady()
 
-    expect(router.currentRoute.value.name).toBe('hermes.chat')
+    expect(router.currentRoute.value.name).toBe('research.workflows')
   }, 60_000)
 
   it('returns an authenticated Agent handoff login to the link page', async () => {
