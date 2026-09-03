@@ -1,6 +1,7 @@
 // HTTP handlers for the artifact registry endpoints.
 import type { Context } from 'koa'
 import {
+  deleteArtifact,
   getArtifact,
   getArtifactPreview,
   listArtifacts,
@@ -78,4 +79,16 @@ export async function getPreview(ctx: Context) {
   // real preview payload through the Studio generated-file preview mechanism;
   // for now the registry only carries preview metadata.
   ctx.body = { preview }
+}
+
+export async function remove(ctx: Context) {
+  const id = requiredId(ctx)
+  if (!id) return
+  const deleted = deleteArtifact(id)
+  if (!deleted) {
+    ctx.status = 404
+    ctx.body = { error: 'artifact not found' }
+    return
+  }
+  ctx.body = { ok: true }
 }

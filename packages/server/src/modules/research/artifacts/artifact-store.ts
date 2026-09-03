@@ -179,3 +179,13 @@ export function getArtifact(id: string): ArtifactRecord | null {
     .get(id) as ArtifactRow | undefined
   return row ? rowToRecord(row) : null
 }
+
+// The registry is metadata-only (SQLite rows under the Web UI home); unlike
+// the paper library it owns no files on disk, so deleting an artifact removes
+// just the row and returns the removed record for confirmation.
+export function deleteArtifact(id: string): ArtifactRecord | null {
+  const existing = getArtifact(id)
+  if (!existing) return null
+  getArtifactsDb().prepare(`DELETE FROM ${ARTIFACTS_TABLE} WHERE id = ?`).run(id)
+  return existing
+}
