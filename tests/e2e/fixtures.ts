@@ -932,6 +932,16 @@ export async function mockHermesApi(page: Page, options: MockHermesApiOptions = 
       return
     }
 
+    if (pathname === '/api/studio/research/workflows/templates' && request.method() === 'GET') {
+      await route.fulfill(jsonResponse({ templates: [] }))
+      return
+    }
+
+    if (pathname === '/api/studio/research/rag/chat-asks' && request.method() === 'GET') {
+      await route.fulfill(jsonResponse({ asks: [] }))
+      return
+    }
+
     unexpectedRequests.push(recordRequest(request))
     await route.fulfill(jsonResponse({ error: `Unexpected mocked route: ${request.method()} ${pathname}` }, 404))
   })

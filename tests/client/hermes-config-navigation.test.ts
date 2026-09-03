@@ -64,9 +64,9 @@ describe("Hermes configuration navigation", () => {
     expect(appSidebar).not.toContain("<span>Hermes</span>");
     expect(appSidebar).not.toContain("nav-group-label");
     expect(appSidebar).not.toContain("groupLabel(");
-    expect(appSidebar.indexOf('t("sidebar.petdex")')).toBeGreaterThan(
-      appSidebar.indexOf('t("sidebar.theme")'),
-    );
+    // P9 slimming: pets and theme entries left the app sidebar.
+    expect(appSidebar).not.toContain('t("sidebar.petdex")');
+    expect(appSidebar).not.toContain('t("sidebar.theme")');
     expect(router).toContain("path: '/hermes/config/settings'");
     expect(router.match(/meta: \{ hermesConfig: true \}/g)).toHaveLength(9);
   });

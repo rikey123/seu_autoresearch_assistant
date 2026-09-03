@@ -2,11 +2,10 @@
 import { computed } from 'vue'
 import { NTooltip } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
-import { isStoredSuperAdmin } from '@/api/client'
+import { useRoute, useRouter } from 'vue-router'
 import { useSessionSearch } from '@/composables/useSessionSearch'
 
-type ActiveSection = 'chat' | 'history' | 'connections' | 'agents' | 'models' | 'group' | 'global' | 'workflow'
+type ActiveSection = 'research' | 'chat' | 'history' | 'connections' | 'agents' | 'models' | 'group' | 'global' | 'workflow'
 
 const props = defineProps<{
   active: ActiveSection
@@ -18,11 +17,19 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const route = useRoute()
 const router = useRouter()
 const { openSessionSearch } = useSessionSearch()
-const canManageAgents = computed(() => isStoredSuperAdmin())
 
 const primaryText = computed(() => props.primaryLabel || t('chat.newChat'))
+const isResearchActive = computed(
+  () => typeof route.name === 'string' && route.name.startsWith('research.'),
+)
+
+function openResearch() {
+  if (isResearchActive.value) return
+  void router.push({ name: 'research.workflows' })
+}
 
 function openChat() {
   if (props.active === 'chat') return
@@ -34,40 +41,44 @@ function openHistory() {
   void router.push({ name: 'hermes.history' })
 }
 
-function openConnections() {
-  if (props.active === 'connections') return
-  void router.push({ name: 'hermes.connections' })
-}
-
-function openAgentManager() {
-  if (props.active === 'agents') return
-  void router.push({ name: 'hermes.agentManager' })
-}
-
 function openModels() {
   if (props.active === 'models') return
   void router.push({ name: 'hermes.models' })
-}
-
-function openGroupChat() {
-  if (props.active === 'group') return
-  void router.push({ name: 'hermes.groupChat' })
 }
 
 function openWorkflow() {
   if (props.active === 'workflow') return
   void router.push({ name: 'hermes.workflow' })
 }
-
-function openApiRelay() {
-  if (typeof window === 'undefined') return
-  window.open('https://apikey.fun/register?aff=LIBAPI', '_blank', 'noopener,noreferrer')
-}
 </script>
 
 <template>
   <div class="page-sidebar-nav">
     <div class="page-sidebar-tabs" role="tablist" aria-label="Chat actions">
+      <button
+        class="page-sidebar-tab research-entry"
+        :class="{ active: isResearchActive }"
+        type="button"
+        :aria-current="isResearchActive ? 'page' : undefined"
+        @click="openResearch"
+      >
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M9 3h6" />
+          <path d="M10 3v5.2L4.6 17.6A2 2 0 0 0 6.4 21h11.2a2 2 0 0 0 1.8-3.4L14 8.2V3" />
+          <line x1="7.5" y1="14.5" x2="16.5" y2="14.5" />
+        </svg>
+        <span>{{ t('sidebar.research') }}</span>
+      </button>
       <button
         class="page-sidebar-tab"
         type="button"
@@ -102,56 +113,6 @@ function openApiRelay() {
       </button>
       <button
         class="page-sidebar-tab"
-        :class="{ active: active === 'connections' }"
-        type="button"
-        :aria-current="active === 'connections' ? 'page' : undefined"
-        @click="openConnections"
-      >
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="18" cy="5" r="2.5" />
-          <circle cx="6" cy="12" r="2.5" />
-          <circle cx="18" cy="19" r="2.5" />
-          <path d="m8.2 10.7 7.6-4.4M8.2 13.3l7.6 4.4" />
-        </svg>
-        <span>{{ t('sidebar.connections') }}</span>
-      </button>
-      <button
-        v-if="canManageAgents"
-        class="page-sidebar-tab"
-        :class="{ active: active === 'agents' }"
-        type="button"
-        :aria-current="active === 'agents' ? 'page' : undefined"
-        @click="openAgentManager"
-      >
-        <svg
-          width="17"
-          height="17"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M12 8V4H8" />
-          <rect x="4" y="8" width="16" height="12" rx="3" />
-          <path d="M2 14h2M20 14h2M9 13v2M15 13v2" />
-        </svg>
-        <span>{{ t('sidebar.agentManager') }}</span>
-      </button>
-      <button
-        class="page-sidebar-tab"
         :class="{ active: active === 'models' }"
         type="button"
         :aria-current="active === 'models' ? 'page' : undefined"
@@ -173,23 +134,8 @@ function openApiRelay() {
         </svg>
         <span>{{ t('sidebar.models') }}</span>
       </button>
-      <button class="page-sidebar-tab" type="button" @click="openApiRelay">
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-        >
-          <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
-          <polyline points="15 3 21 3 21 9" />
-          <line x1="10" y1="14" x2="21" y2="3" />
-        </svg>
-        <span>{{ t('sidebar.apiRelay') }}</span>
-      </button>
     </div>
-    <div class="conversation-switch conversation-switch--four" role="tablist" aria-label="Conversation type">
+    <div class="conversation-switch conversation-switch--three" role="tablist" aria-label="Conversation type">
       <NTooltip trigger="hover" placement="top">
         <template #trigger>
           <button
@@ -207,27 +153,6 @@ function openApiRelay() {
           </button>
         </template>
         {{ t('sidebar.singleChat') }}
-      </NTooltip>
-      <NTooltip trigger="hover" placement="top">
-        <template #trigger>
-          <button
-            class="conversation-switch-tab"
-            :class="{ active: active === 'group' }"
-            type="button"
-            role="tab"
-            :aria-label="t('sidebar.groupChat')"
-            :aria-selected="active === 'group'"
-            @click="openGroupChat"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-            </svg>
-          </button>
-        </template>
-        {{ t('sidebar.groupChat') }}
       </NTooltip>
       <NTooltip trigger="hover" placement="top">
         <template #trigger>
@@ -328,6 +253,16 @@ function openApiRelay() {
   }
 }
 
+// Product entry point: keep the research workbench visually prominent at the
+// top of the page sidebar.
+.research-entry {
+  font-weight: 600;
+
+  svg {
+    color: $accent-primary;
+  }
+}
+
 .conversation-switch {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -337,8 +272,8 @@ function openApiRelay() {
   background: rgba(var(--accent-primary-rgb), 0.05);
 }
 
-.conversation-switch--four {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.conversation-switch--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .conversation-switch-tab {
@@ -372,7 +307,7 @@ function openApiRelay() {
   }
 }
 
-:global(.dark .conversation-switch--four .conversation-switch-tab.active) {
+:global(.dark .conversation-switch--three .conversation-switch-tab.active) {
   background: $bg-card-hover;
   color: $accent-primary;
   box-shadow:

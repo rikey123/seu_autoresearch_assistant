@@ -415,6 +415,11 @@ test('shows category load failure and retries instead of presenting an empty men
   await page.getByRole('link', { name: /General Notes/ }).first().click({ button: 'right' })
   await page.locator('.n-dropdown-option').filter({ hasText: 'Move to category' }).hover()
   await expect(page.locator('.n-dropdown-option:visible').filter({ hasText: /^Failed to load categories$/ })).toBeVisible()
+  // P9 slimming: the shortened page sidebar moves the inline Retry button into
+  // the open dropdown's footprint, so close the menu (outside click) before
+  // retrying.
+  await page.mouse.click(700, 300)
+  await expect(page.locator('.n-dropdown-option:visible')).toHaveCount(0)
   await failure.getByRole('button', { name: 'Retry' }).click()
 
   await expect(failure).toHaveCount(0)

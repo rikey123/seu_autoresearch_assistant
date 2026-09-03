@@ -64,7 +64,7 @@ describe('LoginView password login', () => {
     mount(LoginView)
 
     expect(mockClearApiKey).not.toHaveBeenCalled()
-    expect(mockReplace).toHaveBeenCalledWith('/hermes/chat')
+    expect(mockReplace).toHaveBeenCalledWith('/research/workflows')
   })
 
   it('clears stale tokens when the desktop login page is opened', () => {
@@ -74,7 +74,7 @@ describe('LoginView password login', () => {
     mount(LoginView)
 
     expect(mockClearApiKey).toHaveBeenCalledOnce()
-    expect(mockReplace).not.toHaveBeenCalledWith('/hermes/chat')
+    expect(mockReplace).not.toHaveBeenCalledWith('/research/workflows')
   })
 
   it('logs in with username and password', async () => {
@@ -96,7 +96,7 @@ describe('LoginView password login', () => {
     expect(mockLoginWithPassword).toHaveBeenCalledWith('admin', '123456')
     expect(mockSetApiKey).toHaveBeenCalledWith('jwt-token')
     expect(mockActivateUserTheme).toHaveBeenCalledWith(7, theme)
-    expect(mockReplace).toHaveBeenCalledWith('/hermes/chat')
+    expect(mockReplace).toHaveBeenCalledWith('/research/workflows')
   })
 
   it('returns to the Agent link page after the first login', async () => {

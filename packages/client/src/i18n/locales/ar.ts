@@ -1,6 +1,9 @@
 import { socialMessagesAr } from '../social-messages-locales'
 
 export default {
+  app: {
+    name: 'منصة SEU البحثية',
+  },
   ekkoConfig: {
     "settingsTitle": "الإعدادات",
     "settingsRuntime": "التشغيل",
@@ -132,7 +135,7 @@ export default {
   },
   socialMessages: socialMessagesAr,
   browser: {
-    title: 'المتصفح', settings: 'إعدادات المتصفح', desktopOnly: 'المتصفح المدمج متوفر فقط في Hermes Studio Desktop.', newTab: 'تبويب جديد',
+    title: 'المتصفح', settings: 'إعدادات المتصفح', desktopOnly: 'المتصفح المدمج متوفر فقط في منصة SEU البحثية Desktop.', newTab: 'تبويب جديد',
     back: 'رجوع', forward: 'تقدّم', reload: 'إعادة تحميل', stop: 'إيقاف', addressPlaceholder: 'ابحث أو أدخل عنوانًا',
     selectElement: 'تحديد عنصر', selectRegion: 'تحديد منطقة', annotationPlaceholder: 'اوصف ما يجب أن يفحصه الوكيل أو يغيّره…', selectionData: 'بيانات التحديد في المتصفح', annotationAdded: 'تمت إضافة لقطة الشاشة إلى محرّر المحادثة', annotationCount: '{count} تعليق', annotationLabel: 'تعليق {index}', clearAnnotations: 'مسح التعليقات', finishAnnotation: 'تم',
     agent: 'الوكيل', agentControlling: '{agent} يتحكم في هذا التبويب', agentWaiting: '{agent} في انتظار تأكيدك', takeOver: 'استلام التحكم', tabCrashed: 'تعطّل هذا التبويب.', recoverTab: 'إعادة تحميل التبويب', profiles: 'البروفايلات', profileName: 'اسم البروفايل', addProfile: 'إضافة بروفايل', currentProfile: 'البروفايل النشط', switchProfile: 'تبديل البروفايل', editProfile: 'تعديل البروفايل',
@@ -143,7 +146,7 @@ export default {
   },
   // Login
   login: {
-    title: 'Hermes Studio',
+    title: 'منصة SEU البحثية',
     description: 'أدخل اسم المستخدم وكلمة المرور للمتابعة.',
     placeholder: 'رمز الوصول',
     submit: 'تسجيل الدخول',
@@ -647,8 +650,8 @@ export default {
     dataDirectoryEnvMacos: 'macOS (سطح المكتب / الطرفية)',
     dataDirectoryEnvLinux: 'Linux (بيئة تسجيل الدخول)',
     dataDirectoryEnvDocker: 'Docker Compose',
-    dataDirectoryEnvRestart: 'بعد التغيير، أغلق Hermes Studio بالكامل ثم افتحه مجددًا. في Windows أو Linux، سجّل الخروج ثم الدخول إذا ظل تطبيق سطح المكتب يرى القيمة القديمة.',
-    cliUpdateDescription: 'في Hermes Runtime بالإصدار 0.19.1 والإصدارات الأحدث، يحدّث الأمر التالي Hermes Agent المضمّن فقط. ولا يحدّث تطبيق Hermes Studio لسطح المكتب أو Web UI. أغلق Hermes Studio بالكامل قبل تنفيذه:',
+    dataDirectoryEnvRestart: 'بعد التغيير، أغلق منصة SEU البحثية بالكامل ثم افتحه مجددًا. في Windows أو Linux، سجّل الخروج ثم الدخول إذا ظل تطبيق سطح المكتب يرى القيمة القديمة.',
+    cliUpdateDescription: 'في Hermes Runtime بالإصدار 0.19.1 والإصدارات الأحدث، يحدّث الأمر التالي Hermes Agent المضمّن فقط. ولا يحدّث تطبيق منصة SEU البحثية لسطح المكتب أو Web UI. أغلق منصة SEU البحثية بالكامل قبل تنفيذه:',
     webUiTitle: 'واجهة الويب',
     platform: 'المنصة',
     currentWebUi: 'واجهة الويب الحالية',
@@ -657,10 +660,10 @@ export default {
     chooseRuntimeDirectory: 'اختر مجلدًا',
     resetRuntimeDirectory: 'استخدام الافتراضي للنظام',
     runtimeDirectoryHint: 'يتم نسخ Runtime الحالي والتحقق منه قبل بدء الخدمات المحلية في التشغيل التالي. ويُحتفظ بالتخزين القديم، وتُخزَّن تنزيلات Runtime المستقبلية هنا.',
-    runtimeDirectorySaved: 'تم جدولة نقل Runtime. أعد تشغيل Hermes Studio لتطبيقه.',
+    runtimeDirectorySaved: 'تم جدولة نقل Runtime. أعد تشغيل منصة SEU البحثية لتطبيقه.',
     runtimeMigrationPending: 'وجهة النقل المعلّقة: {directory}',
     runtimeMigrationFailed: 'فشل نقل التخزين، وما زال التخزين السابق نشطًا',
-    runtimeActivationFailed: 'تعذر تشغيل Runtime المحدد، لذلك استخدم Hermes Studio إصدارًا آخر مثبتًا',
+    runtimeActivationFailed: 'تعذر تشغيل Runtime المحدد، لذلك استخدم منصة SEU البحثية إصدارًا آخر مثبتًا',
     active: 'نشط',
     installed: 'مثبّت',
     download: 'تنزيل',
@@ -679,7 +682,7 @@ export default {
     remoteLoadFailed: 'تعذّر تحميل الإصدارات البعيدة',
     downloadTasks: 'مهام التنزيل',
     downloadStarted: 'بدأ التنزيل',
-    activateSuccess: 'تم حفظ اختيار الإصدار. أعد تشغيل Hermes Studio لاستخدامه.',
+    activateSuccess: 'تم حفظ اختيار الإصدار. أعد تشغيل منصة SEU البحثية لاستخدامه.',
     restartPromptTitle: 'Runtime جاهز',
     restartPromptContent: 'تم تثبيت Hermes Runtime {version}. هل تريد إعادة التشغيل الآن لاستخدامه؟',
     restartLater: 'لاحقًا',
@@ -1150,7 +1153,7 @@ export default {
     },
     showToolCalls: 'إظهار نداءات الأدوات',
     pushEnabled: 'تفعيل الإرسال',
-    pushNotConfigured: 'أعِدّ دفع الرسائل في «اتصالات الأجهزة» ضمن Hermes Studio قبل تفعيله.',
+    pushNotConfigured: 'أعِدّ دفع الرسائل في «اتصالات الأجهزة» ضمن منصة SEU البحثية قبل تفعيله.',
     hideToolCalls: 'إخفاء نداءات الأدوات',
     messageQueue: 'طابور الرسائل',
     removeQueuedMessage: 'إزالة الرسالة من الطابور',
@@ -2608,7 +2611,7 @@ export default {
       notifyOnApprovalTestFailed: 'Failed to send approval notification',
       approvalNotificationTitle: 'Approval required',
       approvalNotificationClarifyTitle: 'Clarification required',
-      approvalNotificationBody: 'Open Hermes Studio to review and respond.',
+      approvalNotificationBody: 'Open منصة SEU البحثية to review and respond.',
       notifyOnCompleteHint: 'إظهار إشعار من النظام عند انتهاء الذكاء الاصطناعي',
       notifyOnCompleteMacHint: 'على macOS، اسمح بإشعارات المتصفح من إعدادات النظام.',
       notifyOnCompleteDenied: 'تم رفض إذن الإشعارات',

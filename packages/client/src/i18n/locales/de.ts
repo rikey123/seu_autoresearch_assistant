@@ -1,6 +1,9 @@
 import { socialMessagesDe } from '../social-messages-locales'
 
 export default {
+  app: {
+    name: 'SEU Research Workbench',
+  },
   ekkoConfig: {
     "settingsTitle": "Einstellungen",
     "settingsRuntime": "Laufzeit",
@@ -132,7 +135,7 @@ export default {
   },
   socialMessages: socialMessagesDe,
   browser: {
-    title: 'Browser', settings: 'Browser-Einstellungen', desktopOnly: 'Der integrierte Browser ist nur in Hermes Studio Desktop verfügbar.', newTab: 'Neuer Tab',
+    title: 'Browser', settings: 'Browser-Einstellungen', desktopOnly: 'Der integrierte Browser ist nur in SEU Research Workbench Desktop verfügbar.', newTab: 'Neuer Tab',
     back: 'Zurück', forward: 'Vor', reload: 'Neu laden', stop: 'Stopp', addressPlaceholder: 'Suchen oder Adresse eingeben',
     selectElement: 'Element wählen', selectRegion: 'Bereich wählen', annotationPlaceholder: 'Beschreibe, was der Agent prüfen oder ändern soll…', selectionData: 'Browser-Auswahldaten', annotationAdded: 'Screenshot wurde zum Chat hinzugefügt', annotationCount: '{count} Markierung(en)', annotationLabel: 'Markierung {index}', clearAnnotations: 'Markierungen löschen', finishAnnotation: 'Fertig',
     agent: 'Agent', agentControlling: '{agent} steuert diesen Tab', agentWaiting: '{agent} wartet auf deine Bestätigung', takeOver: 'Übernehmen', tabCrashed: 'Dieser Tab ist abgestürzt.', recoverTab: 'Tab neu laden', profiles: 'Profile', profileName: 'Profilname', addProfile: 'Profil hinzufügen', currentProfile: 'Aktives Profil', switchProfile: 'Profil wechseln', editProfile: 'Profil bearbeiten',
@@ -155,7 +158,7 @@ export default {
   },
   // Login
   login: {
-    title: 'Hermes Studio',
+    title: 'SEU Research Workbench',
     description: 'Geben Sie Benutzername und Passwort ein, um fortzufahren.',
     placeholder: 'Zugangs-Token',
     submit: 'Anmelden',
@@ -659,8 +662,8 @@ export default {
     dataDirectoryEnvMacos: 'macOS (Desktop / Terminal)',
     dataDirectoryEnvLinux: 'Linux (Anmeldeumgebung)',
     dataDirectoryEnvDocker: 'Docker Compose',
-    dataDirectoryEnvRestart: 'Beenden Sie Hermes Studio nach der Änderung vollständig und öffnen Sie es erneut. Wenn die Desktop-App unter Windows oder Linux weiterhin den alten Wert sieht, melden Sie sich ab und wieder an.',
-    cliUpdateDescription: 'Mit Hermes Runtime 0.19.1 und höher aktualisiert der folgende Befehl ausschließlich den integrierten Hermes Agent. Die Hermes Studio-Desktop-App und die Web UI werden nicht aktualisiert. Beenden Sie Hermes Studio vor der Ausführung vollständig:',
+    dataDirectoryEnvRestart: 'Beenden Sie SEU Research Workbench nach der Änderung vollständig und öffnen Sie es erneut. Wenn die Desktop-App unter Windows oder Linux weiterhin den alten Wert sieht, melden Sie sich ab und wieder an.',
+    cliUpdateDescription: 'Mit Hermes Runtime 0.19.1 und höher aktualisiert der folgende Befehl ausschließlich den integrierten Hermes Agent. Die SEU Research Workbench-Desktop-App und die Web UI werden nicht aktualisiert. Beenden Sie SEU Research Workbench vor der Ausführung vollständig:',
     webUiTitle: 'Web UI',
     platform: 'Plattform',
     currentWebUi: 'Aktuelles Web UI',
@@ -669,10 +672,10 @@ export default {
     chooseRuntimeDirectory: 'Verzeichnis auswählen',
     resetRuntimeDirectory: 'Systemstandard verwenden',
     runtimeDirectoryHint: 'Die aktuelle Runtime wird beim nächsten Neustart vor den lokalen Diensten kopiert und geprüft. Der alte Speicher bleibt erhalten; künftige Runtime-Downloads landen ebenfalls hier.',
-    runtimeDirectorySaved: 'Runtime-Migration geplant. Starten Sie Hermes Studio neu, um sie auszuführen.',
+    runtimeDirectorySaved: 'Runtime-Migration geplant. Starten Sie SEU Research Workbench neu, um sie auszuführen.',
     runtimeMigrationPending: 'Ausstehendes Migrationsziel: {directory}',
     runtimeMigrationFailed: 'Speichermigration fehlgeschlagen; der vorherige Speicher bleibt aktiv',
-    runtimeActivationFailed: 'Die ausgewählte Runtime konnte nicht gestartet werden; Hermes Studio verwendet eine andere installierte Version',
+    runtimeActivationFailed: 'Die ausgewählte Runtime konnte nicht gestartet werden; SEU Research Workbench verwendet eine andere installierte Version',
     active: 'Aktiv',
     installed: 'Installiert',
     download: 'Herunterladen',
@@ -691,7 +694,7 @@ export default {
     remoteLoadFailed: 'Remote-Versionen konnten nicht geladen werden',
     downloadTasks: 'Download-Aufgaben',
     downloadStarted: 'Download gestartet',
-    activateSuccess: 'Versionsauswahl gespeichert. Starten Sie Hermes Studio neu, um sie zu verwenden.',
+    activateSuccess: 'Versionsauswahl gespeichert. Starten Sie SEU Research Workbench neu, um sie zu verwenden.',
     restartPromptTitle: 'Runtime bereit',
     restartPromptContent: 'Hermes Runtime {version} wurde installiert. Jetzt neu starten, um sie zu verwenden?',
     restartLater: 'Später',
@@ -1109,7 +1112,7 @@ export default {
     },
     showToolCalls: 'Tool-Aufrufe anzeigen',
     pushEnabled: 'Push aktivieren',
-    pushNotConfigured: 'Richte den Nachrichten-Push zuerst unter „Geräteverbindungen“ in Hermes Studio ein.',
+    pushNotConfigured: 'Richte den Nachrichten-Push zuerst unter „Geräteverbindungen“ in SEU Research Workbench ein.',
     hideToolCalls: 'Tool-Aufrufe ausblenden',
     messageQueue: 'Nachrichtenwarteschlange',
     removeQueuedMessage: 'Nachricht aus Warteschlange entfernen',
@@ -2087,7 +2090,7 @@ jobTriggered: 'Job ausgelost',
       notifyOnApprovalTestFailed: 'Failed to send approval notification',
       approvalNotificationTitle: 'Approval required',
       approvalNotificationClarifyTitle: 'Clarification required',
-      approvalNotificationBody: 'Open Hermes Studio to review and respond.',
+      approvalNotificationBody: 'Open SEU Research Workbench to review and respond.',
       notifyOnCompleteHint: 'Systembenachrichtigung anzeigen, wenn die KI fertig ist',
       notifyOnCompleteMacHint: 'Unter macOS Browserbenachrichtigungen in den Systemeinstellungen erlauben.',
       notifyOnCompleteDenied: 'Benachrichtigungsberechtigung wurde verweigert',
