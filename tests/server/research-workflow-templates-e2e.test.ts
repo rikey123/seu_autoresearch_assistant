@@ -3,24 +3,33 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-// Template-level end-to-end run: both registered research templates are
+// Template-level end-to-end run: registered research templates are
 // instantiated as Studio workflows and executed through the REAL WorkflowManager
 // scheduler. Only the agent/chat layer is mocked (deterministic canned outputs);
 // script nodes run through the real deterministic executor (real `node -e`
 // subprocesses, real stdin/stdout plumbing). The external pdf2zh binary is
-// stubbed at the subprocess boundary with a Node wrapper script.
+// stubbed at the subprocess boundary with a Node wrapper script. The
+// literature-review template binds the literature-review-outline skill: the
+// workflow skill resolver is intentionally NOT mocked — it resolves the bound
+// skill through the profile-config facade against the nature-research skill
+// pack this test loads via the research skillpack route, proving the loaded
+// pack is injected into the agent path (same mechanism as the figure-drawing
+// e2e).
 const originalE2eDbDir = process.env.HERMES_WEB_UI_TEST_DB_DIR
 const originalE2eWebUiHome = process.env.HERMES_WEB_UI_HOME
 const originalE2eStateDir = process.env.HERMES_WEBUI_STATE_DIR
+const originalE2eHermesHome = process.env.HERMES_HOME
 const originalE2eApiKey = process.env.OPENAI_API_KEY
 const originalE2ePdf2zhBin = process.env.PAPER_TRANSLATE_PDF2ZH_BIN
 const originalE2eAuthToken = process.env.AUTH_TOKEN
 const e2eTestRoot = mkdtempSync(join(tmpdir(), 'research-workflow-templates-e2e-'))
+const hermesRoot = join(e2eTestRoot, 'hermes-root')
 const e2eTestDbDir = join(e2eTestRoot, 'db')
 const e2eTestHome = join(e2eTestRoot, 'home')
 process.env.HERMES_WEB_UI_TEST_DB_DIR = e2eTestDbDir
 process.env.HERMES_WEB_UI_HOME = e2eTestHome
 process.env.HERMES_WEBUI_STATE_DIR = e2eTestHome
+process.env.HERMES_HOME = hermesRoot
 
 function restoreEnvironmentVariable(name: string, value: string | undefined): void {
   if (value === undefined) delete process.env[name]
@@ -37,17 +46,12 @@ const sessionStoreMock = vi.hoisted(() => ({
   createSession: vi.fn((data: { id: string }) => ({ id: data.id })),
 }))
 
-vi.mock('../../packages/server/src/modules/studio/services/workflow/skill-resolver', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../packages/server/src/modules/studio/services/workflow/skill-resolver')>()
-  return {
-    ...actual,
-    resolveWorkflowSkillContent: () => Promise.resolve(null),
-  }
-})
-
 // Agent/chat runs are mocked; deterministic script dispatch forwards to the
 // real deterministic executor so template script nodes execute as real
-// `node -e` subprocesses exactly like in production.
+// `node -e` subprocesses exactly like in production. The workflow skill
+// resolver stays REAL: literature-review's bound literature-review-outline
+// skill must resolve against the pack loaded below through the research
+// skillpack route.
 vi.mock('../../packages/server/src/modules/studio/public/workflow-runtime', async () => {
   const executor = await import('../../packages/server/src/modules/studio/services/workflow/deterministic-executor')
   return {
@@ -177,9 +181,56 @@ async function importE2eModules() {
   }
 }
 
+let skillpackRoutes: typeof import('../../packages/server/src/modules/research/skillpacks/index')
+
+/** Loads the nature-research pack through the HTTP route (full research surface). */
+async function loadNatureResearchPack(): Promise<void> {
+  const dispatchRoute = skillpackRoutes.skillpacksRoutes.routes()
+  const ctx: any = {
+    method: 'POST',
+    path: '/api/studio/research/skillpacks/nature-research/load',
+    query: {},
+    params: { id: 'nature-research' },
+    request: { body: {} },
+    state: {},
+    status: 200,
+    body: undefined,
+  }
+  await dispatchRoute(ctx, async () => {})
+  expect(ctx.status).toBe(200)
+  expect(ctx.body.pack.loaded).toBe(true)
+}
+
 beforeAll(async () => {
+  // Mirror the bootstrap wiring (agent-profile-adapter) against an isolated
+  // HERMES_HOME so the skill loader and the engine's skill resolver agree on
+  // the profile skills directory.
+  const { configureProfileConfig } = await import('../../packages/server/src/modules/studio/public/profile-config')
+  configureProfileConfig({
+    buildModelGroups: () => ({ default: '', groups: [] }),
+    getProfileDir: (profile: string) => {
+      const root = process.env.HERMES_HOME || hermesRoot
+      if (!profile || profile === 'default') return root
+      const named = join(root, 'profiles', profile)
+      return existsSync(named) ? named : root
+    },
+    getActiveProfileName: () => 'default',
+    listProfileNames: () => ['default'],
+    providerEnvironmentMap: {},
+    readConfigYaml: async () => ({}),
+    readConfigYamlForProfile: async () => ({}),
+    safeReadFile: async (filePath: string) => {
+      try { return readFileSync(filePath, 'utf-8') } catch { return null }
+    },
+    saveEnvValue: async () => {},
+    saveEnvValueForProfile: async () => {},
+    updateConfigYaml: async (updater: (config: Record<string, any>) => unknown) => updater({}),
+    updateConfigYamlForProfile: async (_profile: string, updater: (config: Record<string, any>) => unknown) => updater({}),
+  })
   const { initAllStores } = await import('../../packages/server/src/modules/studio/infrastructure/database/init')
   initAllStores()
+  skillpackRoutes = await import('../../packages/server/src/modules/research/skillpacks/index')
+  await loadNatureResearchPack()
 })
 
 beforeEach(() => {
@@ -200,6 +251,7 @@ afterAll(async () => {
   restoreEnvironmentVariable('HERMES_WEB_UI_TEST_DB_DIR', originalE2eDbDir)
   restoreEnvironmentVariable('HERMES_WEB_UI_HOME', originalE2eWebUiHome)
   restoreEnvironmentVariable('HERMES_WEBUI_STATE_DIR', originalE2eStateDir)
+  restoreEnvironmentVariable('HERMES_HOME', originalE2eHermesHome)
   restoreEnvironmentVariable('OPENAI_API_KEY', originalE2eApiKey)
   restoreEnvironmentVariable('PAPER_TRANSLATE_PDF2ZH_BIN', originalE2ePdf2zhBin)
   restoreEnvironmentVariable('AUTH_TOKEN', originalE2eAuthToken)
@@ -235,6 +287,19 @@ describe('research workflow template end-to-end runs (real engine)', () => {
     const searchCall = chatRunMock.runAndWait.mock.calls[0][0]
     expect(String(searchCall.input)).toContain('[Current task]')
     expect(String(searchCall.input)).toContain('文献检索助手')
+
+    // The bound literature-review-outline skill (loaded above through the
+    // research skillpack route) is injected ONLY into the writing node that
+    // binds it, as full SKILL.md content through the engine's skill binding.
+    const draftCall = chatRunMock.runAndWait.mock.calls
+      .map(call => call[0])
+      .find(call => String(call.input).includes('综述撰写助手'))
+    expect(draftCall, 'literature-review draft agent call').toBeTruthy()
+    expect(String(draftCall!.input)).toContain('[Workflow selected skills]')
+    expect(String(draftCall!.input)).toContain('[Skill: literature-review-outline]')
+    expect(String(draftCall!.input)).toContain('综合矩阵')
+    // Unbound agent nodes never carry a skill section.
+    expect(String(searchCall.input)).not.toContain('[Workflow selected skills]')
 
     // The HTML report script node really executed and parsed the wrapped
     // upstream draft: no engine wrapper line may leak into the document.

@@ -475,6 +475,17 @@ export default {
       createConfirm: '创建并打开画布',
       createSuccess: '流程已创建，正在打开画布…',
       createFailed: '从模板创建流程失败。',
+      skillStatus: {
+        installed: '已装载 ✓',
+        missing: '未装载',
+        outdated: '需更新',
+        modified: '已修改 ⚠',
+        conflict: '冲突 ⛔',
+        unknown: '状态未知',
+      },
+      skillAutoLoadSuccess: '模板技能已自动装载：{skills}',
+      skillAutoLoadFailed: '模板技能自动装载失败：流程已创建，但技能可能未就绪，运行前请在工作流页确认技能状态。',
+      skillAutoLoadProtected: '技能 {skills} 保留了你的修改或存在同名冲突，自动装载已跳过；如需恢复为包源版本请强制重载（force），见用户手册「skill 包管理」。',
     },
     artifacts: {
       allTypes: '全部类型',

@@ -486,6 +486,17 @@ export default {
       createConfirm: 'Erstellen und Canvas öffnen',
       createSuccess: 'Workflow erstellt. Canvas wird geöffnet…',
       createFailed: 'Workflow konnte nicht aus der Vorlage erstellt werden.',
+      skillStatus: {
+        installed: 'Geladen ✓',
+        missing: 'Nicht geladen',
+        outdated: 'Update verfügbar',
+        modified: 'Geändert ⚠',
+        conflict: 'Konflikt ⛔',
+        unknown: 'Status unbekannt',
+      },
+      skillAutoLoadSuccess: 'Template-Skills automatisch geladen: {skills}',
+      skillAutoLoadFailed: 'Automatisches Laden der Skills fehlgeschlagen: Der Workflow wurde erstellt, aber die Skills sind möglicherweise nicht bereit — vor dem Ausführen bitte den Skill-Status auf der Workflows-Seite prüfen.',
+      skillAutoLoadProtected: 'Skill(s) {skills} behalten Ihre Änderungen oder kollidieren mit einer anderen Quelle; das automatische Laden wurde übersprungen. Zum Wiederherstellen der Originalversion bitte erzwungen neu laden (force) — siehe Skill-Paket-Kapitel im Handbuch.',
     },
     artifacts: {
       allTypes: 'Alle Typen',

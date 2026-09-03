@@ -486,6 +486,17 @@ export default {
       createConfirm: '만들고 캔버스 열기',
       createSuccess: '워크플로가 생성되었습니다. 캔버스를 여는 중…',
       createFailed: '템플릿에서 워크플로를 만들지 못했습니다.',
+      skillStatus: {
+        installed: '로드됨 ✓',
+        missing: '미로드',
+        outdated: '업데이트 필요',
+        modified: '수정됨 ⚠',
+        conflict: '충돌 ⛔',
+        unknown: '상태 알 수 없음',
+      },
+      skillAutoLoadSuccess: '템플릿 스킬이 자동으로 로드되었습니다: {skills}',
+      skillAutoLoadFailed: '스킬 자동 로드에 실패했습니다: 워크플로는 생성되었지만 실행 전에 워크플로 페이지에서 스킬 상태를 확인하세요.',
+      skillAutoLoadProtected: '스킬 {skills}은(는) 사용자 수정 또는 충돌을 보존하기 위해 자동 로드를 건너뛰었습니다. 배포 버전으로 되돌리려면 강제 재로드(force)를 사용하세요. 자세한 내용은 매뉴얼의 skill 팩 관리를 참고하세요.',
     },
     artifacts: {
       allTypes: '모든 유형',

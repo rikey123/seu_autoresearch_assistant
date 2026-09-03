@@ -10,16 +10,23 @@ import { join } from 'node:path'
 // next-steps agent); the queue intake, batch aggregation, and morning report
 // script nodes run through the real deterministic executor (real `node -e`
 // subprocesses, real stdin/stdout plumbing, real morning-report.html written
-// to disk).
+// to disk). The next-steps agent binds the reviewer-self-check skill: the
+// workflow skill resolver is intentionally NOT mocked — it resolves the bound
+// skill through the profile-config facade against the nature-research skill
+// pack this test loads via the research skillpack route (same mechanism as
+// the figure-drawing e2e).
 const originalE2eDbDir = process.env.HERMES_WEB_UI_TEST_DB_DIR
 const originalE2eWebUiHome = process.env.HERMES_WEB_UI_HOME
 const originalE2eStateDir = process.env.HERMES_WEBUI_STATE_DIR
+const originalE2eHermesHome = process.env.HERMES_HOME
 const e2eTestRoot = mkdtempSync(join(tmpdir(), 'research-overnight-research-e2e-'))
+const hermesRoot = join(e2eTestRoot, 'hermes-root')
 const e2eTestDbDir = join(e2eTestRoot, 'db')
 const e2eTestHome = join(e2eTestRoot, 'home')
 process.env.HERMES_WEB_UI_TEST_DB_DIR = e2eTestDbDir
 process.env.HERMES_WEB_UI_HOME = e2eTestHome
 process.env.HERMES_WEBUI_STATE_DIR = e2eTestHome
+process.env.HERMES_HOME = hermesRoot
 
 function restoreEnvironmentVariable(name: string, value: string | undefined): void {
   if (value === undefined) delete process.env[name]
@@ -36,17 +43,12 @@ const sessionStoreMock = vi.hoisted(() => ({
   createSession: vi.fn((data: { id: string }) => ({ id: data.id })),
 }))
 
-vi.mock('../../packages/server/src/modules/studio/services/workflow/skill-resolver', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../packages/server/src/modules/studio/services/workflow/skill-resolver')>()
-  return {
-    ...actual,
-    resolveWorkflowSkillContent: () => Promise.resolve(null),
-  }
-})
-
 // Agent/chat runs are mocked; deterministic script dispatch forwards to the
 // real deterministic executor so template script nodes execute as real
-// `node -e` subprocesses exactly like in production.
+// `node -e` subprocesses exactly like in production. The workflow skill
+// resolver stays REAL: overnight-research's bound reviewer-self-check skill
+// must resolve against the pack loaded below through the research skillpack
+// route.
 vi.mock('../../packages/server/src/modules/studio/public/workflow-runtime', async () => {
   const executor = await import('../../packages/server/src/modules/studio/services/workflow/deterministic-executor')
   return {
@@ -133,9 +135,56 @@ async function importE2eModules() {
   }
 }
 
+let skillpackRoutes: typeof import('../../packages/server/src/modules/research/skillpacks/index')
+
+/** Loads the nature-research pack through the HTTP route (full research surface). */
+async function loadNatureResearchPack(): Promise<void> {
+  const dispatchRoute = skillpackRoutes.skillpacksRoutes.routes()
+  const ctx: any = {
+    method: 'POST',
+    path: '/api/studio/research/skillpacks/nature-research/load',
+    query: {},
+    params: { id: 'nature-research' },
+    request: { body: {} },
+    state: {},
+    status: 200,
+    body: undefined,
+  }
+  await dispatchRoute(ctx, async () => {})
+  expect(ctx.status).toBe(200)
+  expect(ctx.body.pack.loaded).toBe(true)
+}
+
 beforeAll(async () => {
+  // Mirror the bootstrap wiring (agent-profile-adapter) against an isolated
+  // HERMES_HOME so the skill loader and the engine's skill resolver agree on
+  // the profile skills directory.
+  const { configureProfileConfig } = await import('../../packages/server/src/modules/studio/public/profile-config')
+  configureProfileConfig({
+    buildModelGroups: () => ({ default: '', groups: [] }),
+    getProfileDir: (profile: string) => {
+      const root = process.env.HERMES_HOME || hermesRoot
+      if (!profile || profile === 'default') return root
+      const named = join(root, 'profiles', profile)
+      return existsSync(named) ? named : root
+    },
+    getActiveProfileName: () => 'default',
+    listProfileNames: () => ['default'],
+    providerEnvironmentMap: {},
+    readConfigYaml: async () => ({}),
+    readConfigYamlForProfile: async () => ({}),
+    safeReadFile: async (filePath: string) => {
+      try { return readFileSync(filePath, 'utf-8') } catch { return null }
+    },
+    saveEnvValue: async () => {},
+    saveEnvValueForProfile: async () => {},
+    updateConfigYaml: async (updater: (config: Record<string, any>) => unknown) => updater({}),
+    updateConfigYamlForProfile: async (_profile: string, updater: (config: Record<string, any>) => unknown) => updater({}),
+  })
   const { initAllStores } = await import('../../packages/server/src/modules/studio/infrastructure/database/init')
   initAllStores()
+  skillpackRoutes = await import('../../packages/server/src/modules/research/skillpacks/index')
+  await loadNatureResearchPack()
 })
 
 let nextStepsAgentOutput = NEXT_STEPS_OUTPUT
@@ -166,6 +215,7 @@ afterAll(async () => {
   restoreEnvironmentVariable('HERMES_WEB_UI_TEST_DB_DIR', originalE2eDbDir)
   restoreEnvironmentVariable('HERMES_WEB_UI_HOME', originalE2eWebUiHome)
   restoreEnvironmentVariable('HERMES_WEBUI_STATE_DIR', originalE2eStateDir)
+  restoreEnvironmentVariable('HERMES_HOME', originalE2eHermesHome)
   rmSync(e2eTestRoot, { recursive: true, force: true })
 })
 
@@ -221,13 +271,20 @@ describe('overnight-research template end-to-end run (real engine)', () => {
     expect(executorRow.session_id).not.toBe('')
 
     // The suggestion agent received the aggregation ledger through the
-    // aggregate -> next-steps edge.
+    // aggregate -> next-steps edge, with its bound reviewer-self-check skill
+    // (loaded above through the research skillpack route) injected as full
+    // SKILL.md content. The unbound batch executor never carries a skill
+    // section.
     const nextStepsCall = chatRunMock.runAndWait.mock.calls
       .map(call => call[0])
       .find(call => String(call.input).includes('下一步建议助手'))
     expect(nextStepsCall, 'next-steps agent call').toBeTruthy()
     expect(String(nextStepsCall!.input)).toContain('[Upstream: 逐批聚合]')
     expect(String(nextStepsCall!.input)).toContain('"completionRate":80')
+    expect(String(nextStepsCall!.input)).toContain('[Workflow selected skills]')
+    expect(String(nextStepsCall!.input)).toContain('[Skill: reviewer-self-check]')
+    expect(String(nextStepsCall!.input)).toContain('Major issues')
+    expect(String(executorCall!.input)).not.toContain('[Workflow selected skills]')
     expect(nodeRow(result, 'or-next-steps').session_id).not.toBe('')
 
     // Intake validated/deduped/batched the queue through a real subprocess.

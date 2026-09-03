@@ -476,6 +476,17 @@ export default {
       createConfirm: 'Create and open canvas',
       createSuccess: 'Workflow created. Opening the canvas…',
       createFailed: 'Failed to create the workflow from the template.',
+      skillStatus: {
+        installed: 'Loaded ✓',
+        missing: 'Not loaded',
+        outdated: 'Update available',
+        modified: 'Modified ⚠',
+        conflict: 'Conflict ⛔',
+        unknown: 'Status unknown',
+      },
+      skillAutoLoadSuccess: 'Template skills loaded automatically: {skills}',
+      skillAutoLoadFailed: 'Automatic skill loading failed: the workflow was created, but the skills may not be ready — check the skill status on the Workflows page before running.',
+      skillAutoLoadProtected: 'Skill(s) {skills} keep your modifications or conflict with another source; automatic loading was skipped. Force-reload to restore the shipped version — see the skill pack section of the manual.',
     },
     artifacts: {
       allTypes: 'All types',

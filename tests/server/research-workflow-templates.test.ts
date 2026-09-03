@@ -65,6 +65,7 @@ import {
   type ResearchWorkflowTemplate,
 } from '../../packages/server/src/modules/research/workflows/template-contract'
 import { getResearchWorkflowTemplate } from '../../packages/server/src/modules/research/workflows/template-service'
+import { findMissingSkillAssets, getResearchSkillPack } from '../../packages/server/src/modules/research/skillpacks/skillpack-service'
 import { WORKFLOW_SCRIPT_NODE_RUNTIME } from '../../packages/client/src/utils/workflow-node-type'
 
 const ROUTES_MODULE = '../../packages/server/src/modules/research/workflows/index'
@@ -146,6 +147,15 @@ describe('research workflow template registry (HTTP)', () => {
     }
     const paperTranslate = ctx.body.templates.find((template: any) => template.id === 'paper-translate')
     expect(paperTranslate.requiredEnv).toHaveProperty('OPENAI_API_KEY')
+
+    // Every summary carries the deduped set of skills bound by the template's
+    // agent nodes — the workflows hub renders per-skill load tags from it.
+    expect(Object.fromEntries(ctx.body.templates.map((template: any) => [template.id, template.skills]))).toEqual({
+      'literature-review': ['literature-review-outline'],
+      'paper-translate': [],
+      'overnight-research': ['reviewer-self-check'],
+      'figure-drawing': ['scientific-figure-style'],
+    })
   })
 
   it('returns the full template through GET /templates/:id and 404 for unknown ids', async () => {
@@ -262,6 +272,36 @@ describe('research workflow template schema', () => {
     const report = template.nodes.find(node => node.id === 'or-morning-report')!
     expect(report.data.code).toContain('parseSuggestionLine')
     expect(report.data.code).toContain('自动建议生成失败')
+  })
+
+  it('binds curated skill-pack skills to exactly the agent nodes that consume them', () => {
+    const templates = registeredTemplates()
+    const bindings: Record<string, string[]> = {}
+    for (const template of templates) {
+      for (const node of template.nodes) {
+        if (node.data.skills?.length) bindings[`${template.id}/${node.id}`] = node.data.skills
+      }
+    }
+    // literature-review pins its writing node to the outline skill,
+    // overnight-research pins its review-style suggestion node to the
+    // reviewer self-check skill, figure-drawing pins its drawing node to the
+    // drawing conventions skill, and paper-translate stays script-first with
+    // no binding at all.
+    expect(bindings).toEqual({
+      'literature-review/lr-draft': ['literature-review-outline'],
+      'figure-drawing/fd-figure-agent': ['scientific-figure-style'],
+      'overnight-research/or-next-steps': ['reviewer-self-check'],
+    })
+
+    // Every bound name must ship inside the registered nature-research pack
+    // with real assets, so loading the pack is sufficient to satisfy the
+    // engine's skill preflight for all templates.
+    const pack = getResearchSkillPack('nature-research')!
+    expect(findMissingSkillAssets(pack)).toEqual([])
+    const packSkillNames = new Set(pack.skills.map(skill => skill.name))
+    for (const skills of Object.values(bindings)) {
+      for (const skill of skills) expect(packSkillNames.has(skill), `bound skill ${skill} ships in the pack`).toBe(true)
+    }
   })
 
   it('reports every problem in a broken template definition', () => {
