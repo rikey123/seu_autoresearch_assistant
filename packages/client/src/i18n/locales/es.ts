@@ -486,6 +486,17 @@ export default {
       createConfirm: 'Crear y abrir el lienzo',
       createSuccess: 'Flujo de trabajo creado. Abriendo el lienzo…',
       createFailed: 'No se pudo crear el flujo de trabajo desde la plantilla.',
+      skillStatus: {
+        installed: 'Cargada ✓',
+        missing: 'Sin cargar',
+        outdated: 'Actualización disponible',
+        modified: 'Modificada ⚠',
+        conflict: 'Conflicto ⛔',
+        unknown: 'Estado desconocido',
+      },
+      skillAutoLoadSuccess: 'Habilidades de la plantilla cargadas automáticamente: {skills}',
+      skillAutoLoadFailed: 'Fallo al cargar las habilidades automáticamente: el flujo se creó, pero las habilidades pueden no estar listas; comprueba su estado en la página de flujos antes de ejecutar.',
+      skillAutoLoadProtected: 'Las habilidades {skills} conservan tus modificaciones o entran en conflicto con otra fuente; la carga automática se omitió. Para restaurar la versión original, recarga forzadamente (force); consulta la sección de paquetes de skills del manual.',
     },
     artifacts: {
       allTypes: 'Todos los tipos',

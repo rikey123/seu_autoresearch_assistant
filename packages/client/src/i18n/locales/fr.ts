@@ -486,6 +486,17 @@ export default {
       createConfirm: 'Créer et ouvrir le canevas',
       createSuccess: 'Workflow créé. Ouverture du canevas…',
       createFailed: 'Échec de la création du workflow à partir du modèle.',
+      skillStatus: {
+        installed: 'Chargée ✓',
+        missing: 'Non chargée',
+        outdated: 'Mise à jour disponible',
+        modified: 'Modifiée ⚠',
+        conflict: 'Conflit ⛔',
+        unknown: 'Statut inconnu',
+      },
+      skillAutoLoadSuccess: 'Compétences du modèle chargées automatiquement : {skills}',
+      skillAutoLoadFailed: "Échec du chargement automatique des compétences : le flux a été créé, mais les compétences ne sont peut-être pas prêtes — vérifiez leur statut sur la page Workflows avant l'exécution.",
+      skillAutoLoadProtected: 'Les compétences {skills} conservent vos modifications ou sont en conflit avec une autre source ; le chargement automatique a été ignoré. Pour restaurer la version d’origine, effectuez un rechargement forcé (force) — voir la section paquets de compétences du manuel.',
     },
     artifacts: {
       allTypes: 'Tous les types',

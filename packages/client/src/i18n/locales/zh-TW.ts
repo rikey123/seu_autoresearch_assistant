@@ -474,6 +474,17 @@ export default {
       createConfirm: '建立並開啟畫布',
       createSuccess: '流程已建立，正在開啟畫布…',
       createFailed: '從範本建立流程失敗。',
+      skillStatus: {
+        installed: '已載入 ✓',
+        missing: '未載入',
+        outdated: '需更新',
+        modified: '已修改 ⚠',
+        conflict: '衝突 ⛔',
+        unknown: '狀態未知',
+      },
+      skillAutoLoadSuccess: '範本技能已自動載入：{skills}',
+      skillAutoLoadFailed: '範本技能自動載入失敗：流程已建立，但技能可能未就緒，執行前請在工作流頁確認技能狀態。',
+      skillAutoLoadProtected: '技能 {skills} 保留了你的修改或存在同名衝突，自動載入已略過；如需還原為套件來源版本請強制重新載入（force），見使用者手冊「skill 包管理」。',
     },
     artifacts: {
       allTypes: '全部類型',

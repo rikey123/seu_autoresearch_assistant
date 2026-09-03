@@ -486,6 +486,17 @@ export default {
       createConfirm: 'Criar e abrir a tela',
       createSuccess: 'Fluxo de trabalho criado. Abrindo a tela…',
       createFailed: 'Falha ao criar o fluxo de trabalho a partir do modelo.',
+      skillStatus: {
+        installed: 'Carregada ✓',
+        missing: 'Não carregada',
+        outdated: 'Atualização disponível',
+        modified: 'Modificada ⚠',
+        conflict: 'Conflito ⛔',
+        unknown: 'Estado desconhecido',
+      },
+      skillAutoLoadSuccess: 'Habilidades do modelo carregadas automaticamente: {skills}',
+      skillAutoLoadFailed: 'Falha ao carregar as habilidades automaticamente: o fluxo foi criado, mas as habilidades podem não estar prontas — verifique o estado na página de fluxos antes de executar.',
+      skillAutoLoadProtected: 'As habilidades {skills} mantêm suas modificações ou conflitam com outra fonte; o carregamento automático foi ignorado. Para restaurar a versão original, recarregue com força (force) — veja a seção de pacotes de skills do manual.',
     },
     artifacts: {
       allTypes: 'Todos os tipos',

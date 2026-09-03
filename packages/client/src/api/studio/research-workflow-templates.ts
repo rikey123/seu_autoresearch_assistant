@@ -20,11 +20,31 @@ export interface ResearchWorkflowTemplateSummary {
   nodeCount: number
   edgeCount: number
   nodeTypes: WorkflowTemplateNodeType[]
+  /**
+   * Skill names bound by the template's agent nodes (deduped, first-seen
+   * order), summarized server-side from nodes[].data.skills. The hub maps
+   * each name onto the skillpack status list for its load-state tag.
+   */
+  skills: string[]
   requiredEnv?: Record<string, string>
   optionalEnv?: Record<string, string>
 }
 
-export interface ResearchWorkflowTemplate extends ResearchWorkflowTemplateSummary {
+/**
+ * Full template definition exactly as GET /templates/:id returns it: the
+ * node/edge payload plus the descriptive fields. Bound skills live inside
+ * nodes[].data.skills (the hub computes the required set from there when
+ * instantiating a template); the summarized `skills` list only exists on
+ * ResearchWorkflowTemplateSummary.
+ */
+export interface ResearchWorkflowTemplate {
+  id: string
+  name: string
+  description: string
+  profile: string
+  steps: string[]
+  requiredEnv?: Record<string, string>
+  optionalEnv?: Record<string, string>
   nodes: unknown[]
   edges: unknown[]
 }

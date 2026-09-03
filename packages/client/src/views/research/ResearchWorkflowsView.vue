@@ -27,6 +27,20 @@ function nodeCountLabel(count: number): string {
   return t('research.workflows.nodeCount', { count })
 }
 
+// Per-skill load state for the template card tags. The status comes from the
+// skillpack status list the hub fetched on mount; 'unknown' covers a failed
+// status fetch (the tag degrades to a neutral style instead of guessing).
+type SkillStatusKey = 'installed' | 'missing' | 'outdated' | 'modified' | 'conflict' | 'unknown'
+
+function skillStatusOf(skill: string): SkillStatusKey {
+  return store.skillStatusFor(skill)
+}
+
+function skillTagLabel(skill: string): string {
+  const status = skillStatusOf(skill)
+  return `${store.skillTitleFor(skill)} · ${t(`research.workflows.skillStatus.${status}`)}`
+}
+
 function openCreateModal(template: ResearchWorkflowTemplateSummary): void {
   createTargetTemplate.value = template
   createName.value = suggestWorkflowName(template)
@@ -63,6 +77,9 @@ async function onConfirmDelete(workflow: WorkflowRecord): Promise<void> {
 onMounted(() => {
   void store.refreshTemplates()
   void store.refreshWorkflows()
+  // Skill pack statuses decorate the template cards with per-skill load tags;
+  // they also inform the create-time auto-load decisions.
+  void store.refreshSkillStatuses()
 })
 </script>
 
@@ -70,7 +87,7 @@ onMounted(() => {
   <ResearchPageShell section="workflows">
     <template #content>
       <div class="workflows-hub">
-        <p v-if="store.notice" class="hub-notice" role="alert">{{ t(store.notice.key) }}</p>
+        <p v-if="store.notice" class="hub-notice" :class="`hub-notice-${store.notice.kind}`" role="alert">{{ t(store.notice.key, store.notice.params ?? {}) }}</p>
 
         <section class="hub-section" data-testid="template-gallery">
           <h3 class="hub-section-title">{{ t('research.workflows.templatesTitle') }}</h3>
@@ -90,6 +107,21 @@ onMounted(() => {
                 <span class="template-name">{{ template.name }}</span>
                 <span class="template-desc">{{ template.description }}</span>
               </button>
+              <div
+                v-if="template.skills && template.skills.length"
+                class="template-skills"
+                data-testid="template-skills"
+              >
+                <span
+                  v-for="skill in template.skills"
+                  :key="skill"
+                  class="skill-tag"
+                  :class="`skill-${skillStatusOf(skill)}`"
+                  data-testid="template-skill-tag"
+                  :data-skill="skill"
+                  :data-status="skillStatusOf(skill)"
+                >{{ skillTagLabel(skill) }}</span>
+              </div>
               <div class="template-footer">
                 <span class="template-meta">{{ nodeCountLabel(template.nodeCount) }}</span>
                 <NButton
@@ -224,6 +256,21 @@ onMounted(() => {
   background: $bg-secondary;
   border: 1px solid $border-color;
   border-radius: $radius-sm;
+
+  &.hub-notice-error {
+    color: $error;
+    border-color: $error;
+  }
+
+  &.hub-notice-warning {
+    color: $warning;
+    border-color: $warning;
+  }
+
+  &.hub-notice-success {
+    color: $success;
+    border-color: $success;
+  }
 }
 
 .hub-section {
@@ -302,6 +349,48 @@ onMounted(() => {
   justify-content: space-between;
   gap: 8px;
   margin-top: auto;
+}
+
+.template-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.skill-tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 1px 8px;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.7;
+  color: $text-secondary;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: $bg-secondary;
+  border: 1px solid $border-color;
+  border-radius: 999px;
+
+  &.skill-installed {
+    color: $success;
+    border-color: $success;
+  }
+
+  &.skill-outdated {
+    color: $warning;
+    border-color: $warning;
+  }
+
+  &.skill-modified,
+  &.skill-conflict {
+    color: $error;
+    border-color: $error;
+  }
+
+  &.skill-unknown {
+    color: $text-muted;
+  }
 }
 
 .template-meta {

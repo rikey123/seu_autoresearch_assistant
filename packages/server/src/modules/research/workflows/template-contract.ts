@@ -78,6 +78,12 @@ export interface ResearchWorkflowTemplateSummary {
   nodeCount: number
   edgeCount: number
   nodeTypes: WorkflowTemplateNodeType[]
+  /**
+   * Skill names bound by the template's agent nodes (deduped, first-seen
+   * order). Computed from nodes[].data.skills so the workflows hub can render
+   * per-skill load status without fetching the full definition.
+   */
+  skills: string[]
   requiredEnv?: Record<string, string>
   optionalEnv?: Record<string, string>
 }
@@ -147,6 +153,12 @@ export function templateEdge(id: string, source: string, target: string): Workfl
 }
 
 export function summarizeResearchWorkflowTemplate(template: ResearchWorkflowTemplate): ResearchWorkflowTemplateSummary {
+  const skills: string[] = []
+  for (const node of template.nodes) {
+    for (const skill of node.data.skills || []) {
+      if (!skills.includes(skill)) skills.push(skill)
+    }
+  }
   return {
     id: template.id,
     name: template.name,
@@ -156,6 +168,7 @@ export function summarizeResearchWorkflowTemplate(template: ResearchWorkflowTemp
     nodeCount: template.nodes.length,
     edgeCount: template.edges.length,
     nodeTypes: [...new Set(template.nodes.map(node => node.type))],
+    skills,
     ...(template.requiredEnv ? { requiredEnv: { ...template.requiredEnv } } : {}),
     ...(template.optionalEnv ? { optionalEnv: { ...template.optionalEnv } } : {}),
   }

@@ -486,6 +486,17 @@ export default {
       createConfirm: '作成してキャンバスを開く',
       createSuccess: 'ワークフローを作成しました。キャンバスを開いています…',
       createFailed: 'テンプレートからのワークフロー作成に失敗しました。',
+      skillStatus: {
+        installed: '読込済み ✓',
+        missing: '未読込',
+        outdated: '更新あり',
+        modified: '変更あり ⚠',
+        conflict: '競合 ⛔',
+        unknown: '状態不明',
+      },
+      skillAutoLoadSuccess: 'テンプレートのスキルを自動読込しました：{skills}',
+      skillAutoLoadFailed: 'スキルの自動読込に失敗しました：ワークフローは作成されましたが、実行前にワークフローページでスキル状態を確認してください。',
+      skillAutoLoadProtected: 'スキル {skills} はあなたの変更を保持しているか競合しているため、自動読込をスキップしました。出荷版に戻すには強制再読込（force）を行ってください。詳細はマニュアルの「skill パック管理」を参照。',
     },
     artifacts: {
       allTypes: 'すべての種類',

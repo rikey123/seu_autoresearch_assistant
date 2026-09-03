@@ -29,6 +29,11 @@ const workflowsApiMock = vi.hoisted(() => ({
   createWorkflow: vi.fn(),
   deleteWorkflow: vi.fn(),
 }))
+const skillpacksApiMock = vi.hoisted(() => ({
+  listSkillPacks: vi.fn(),
+  loadSkillPack: vi.fn(),
+  unloadSkillPack: vi.fn(),
+}))
 const routerPushMock = vi.hoisted(() => vi.fn())
 
 // Keep the real vue-i18n (the locale block below builds real translators) and
@@ -90,6 +95,7 @@ vi.mock('naive-ui', () => ({
 
 vi.mock('@/api/studio/research-workflow-templates', () => templatesApiMock)
 vi.mock('@/api/studio/workflows', () => workflowsApiMock)
+vi.mock('@/api/studio/research-skillpacks', () => skillpacksApiMock)
 
 const TEMPLATE_NODES = [
   {
@@ -119,7 +125,37 @@ function templateSummary(overrides: Record<string, unknown> = {}) {
     nodeCount: 4,
     edgeCount: 3,
     nodeTypes: ['script', 'agent'],
+    skills: [] as string[],
     ...overrides,
+  }
+}
+
+/** One skill entry of a skillpack status payload (server contract shape). */
+function packSkill(name: string, title: string, status: string) {
+  return { name, title, summary: `${title}摘要`, status, managed: status !== 'missing', installedPath: status === 'missing' ? null : `/skills/${name}` }
+}
+
+function packStatus(skills: Array<{ name: string; title: string; status: string }>, overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'nature-research',
+    name: 'Nature 科研技能精选包',
+    description: 'nature-skills 精选子集',
+    origin: 'nature-skills',
+    target: 'hermes',
+    targetDir: '/skills',
+    loaded: false,
+    skills: skills.map(skill => packSkill(skill.name, skill.title, skill.status)),
+    ...overrides,
+  }
+}
+
+/** Full-template fixture nodes; `skills` here is what auto-load computes from. */
+function templateNode(id: string, title: string, skills: string[] = []) {
+  return {
+    id,
+    type: 'agent',
+    position: { x: 80, y: 120 },
+    data: { title, input: 'task', orchestration: { join: 'all' }, agent: 'hermes', agentMode: 'scoped', provider: '', model: '', apiMode: '', reasoningEffort: 'default', skills, images: [], approvalRequired: false },
   }
 }
 
@@ -160,6 +196,15 @@ describe('research workflows hub view', () => {
     workflowsApiMock.listWorkflows.mockResolvedValue([])
     workflowsApiMock.createWorkflow.mockResolvedValue(workflowRecord())
     workflowsApiMock.deleteWorkflow.mockResolvedValue(undefined)
+    skillpacksApiMock.listSkillPacks.mockResolvedValue({ packs: [packStatus([])], assetProblems: [] })
+    skillpacksApiMock.loadSkillPack.mockResolvedValue({
+      result: { pack: 'nature-research', target: 'hermes', targetDir: '/skills', profile: 'default', installed: [], updated: [], skipped: [], results: [] },
+      pack: packStatus([], { loaded: true }),
+    })
+    skillpacksApiMock.unloadSkillPack.mockResolvedValue({
+      result: { pack: 'nature-research', target: 'hermes', targetDir: '/skills', profile: 'default', removed: [], skipped: [] },
+      pack: packStatus([]),
+    })
   })
 
   it('renders the template gallery with name, description, and node count', async () => {
@@ -326,6 +371,200 @@ describe('research workflows hub view', () => {
   })
 })
 
+describe('template skill tags and create-time auto-load', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setActivePinia(createPinia())
+    templatesApiMock.listResearchWorkflowTemplates.mockResolvedValue([templateSummary()])
+    templatesApiMock.fetchResearchWorkflowTemplate.mockResolvedValue(fullTemplate())
+    workflowsApiMock.listWorkflows.mockResolvedValue([])
+    workflowsApiMock.createWorkflow.mockResolvedValue(workflowRecord({ id: 'wf-new' }))
+    workflowsApiMock.deleteWorkflow.mockResolvedValue(undefined)
+    skillpacksApiMock.listSkillPacks.mockResolvedValue({ packs: [packStatus([])], assetProblems: [] })
+    skillpacksApiMock.loadSkillPack.mockResolvedValue({
+      result: {
+        pack: 'nature-research', target: 'hermes', targetDir: '/skills', profile: 'default',
+        installed: ['literature-review-outline'], updated: [], skipped: [],
+        results: [{ name: 'literature-review-outline', action: 'installed' }],
+      },
+      pack: packStatus([{ name: 'literature-review-outline', title: '文献综述提纲', status: 'installed' }], { loaded: true }),
+    })
+    skillpacksApiMock.unloadSkillPack.mockResolvedValue({
+      result: { pack: 'nature-research', target: 'hermes', targetDir: '/skills', profile: 'default', removed: [], skipped: [] },
+      pack: packStatus([]),
+    })
+  })
+
+  it('fetches skill statuses on mount and renders one tag per bound skill', async () => {
+    templatesApiMock.listResearchWorkflowTemplates.mockResolvedValue([
+      templateSummary({ skills: ['literature-review-outline'] }),
+    ])
+    skillpacksApiMock.listSkillPacks.mockResolvedValue({
+      packs: [packStatus([{ name: 'literature-review-outline', title: '文献综述提纲', status: 'installed' }], { loaded: true })],
+      assetProblems: [],
+    })
+    const wrapper = mount(ResearchWorkflowsView)
+    await flushPromises()
+
+    expect(skillpacksApiMock.listSkillPacks).toHaveBeenCalledTimes(1)
+    const tags = wrapper.findAll('[data-testid="template-skill-tag"]')
+    expect(tags).toHaveLength(1)
+    expect(tags[0].attributes('data-skill')).toBe('literature-review-outline')
+    expect(tags[0].attributes('data-status')).toBe('installed')
+    expect(tags[0].classes()).toContain('skill-installed')
+    // The tag pairs the skill title with its localized load state.
+    expect(tags[0].text()).toContain('文献综述提纲')
+  })
+
+  it('renders all five load states on the tags', async () => {
+    const fiveStates = [
+      { name: 's-installed', title: '技能甲', status: 'installed' },
+      { name: 's-missing', title: '技能乙', status: 'missing' },
+      { name: 's-outdated', title: '技能丙', status: 'outdated' },
+      { name: 's-modified', title: '技能丁', status: 'modified' },
+      { name: 's-conflict', title: '技能戊', status: 'conflict' },
+    ]
+    templatesApiMock.listResearchWorkflowTemplates.mockResolvedValue([
+      templateSummary({ skills: fiveStates.map(skill => skill.name) }),
+    ])
+    skillpacksApiMock.listSkillPacks.mockResolvedValue({
+      packs: [packStatus(fiveStates)],
+      assetProblems: [],
+    })
+    const wrapper = mount(ResearchWorkflowsView)
+    await flushPromises()
+
+    const tags = wrapper.findAll('[data-testid="template-skill-tag"]')
+    expect(tags.map(tag => tag.attributes('data-status')))
+      .toEqual(['installed', 'missing', 'outdated', 'modified', 'conflict'])
+    expect(tags.map(tag => tag.classes()))
+      .toEqual([
+        ['skill-tag', 'skill-installed'],
+        ['skill-tag', 'skill-missing'],
+        ['skill-tag', 'skill-outdated'],
+        ['skill-tag', 'skill-modified'],
+        ['skill-tag', 'skill-conflict'],
+      ])
+  })
+
+  it('degrades to an unknown tag when the status list is unavailable', async () => {
+    templatesApiMock.listResearchWorkflowTemplates.mockResolvedValue([
+      templateSummary({ skills: ['literature-review-outline'] }),
+    ])
+    skillpacksApiMock.listSkillPacks.mockRejectedValue(new Error('offline'))
+    const wrapper = mount(ResearchWorkflowsView)
+    await flushPromises()
+
+    const tags = wrapper.findAll('[data-testid="template-skill-tag"]')
+    expect(tags).toHaveLength(1)
+    expect(tags[0].attributes('data-status')).toBe('unknown')
+    expect(tags[0].classes()).toContain('skill-unknown')
+  })
+
+  it('auto-loads missing bound skills after creation and reports success without blocking', async () => {
+    templatesApiMock.listResearchWorkflowTemplates.mockResolvedValue([
+      templateSummary({ id: 'literature-review', name: '文献综述', skills: ['literature-review-outline'] }),
+    ])
+    templatesApiMock.fetchResearchWorkflowTemplate.mockResolvedValue(fullTemplate({
+      id: 'literature-review',
+      nodes: [templateNode('lr-draft', '综述初稿', ['literature-review-outline'])],
+    }))
+    skillpacksApiMock.listSkillPacks.mockResolvedValue({
+      packs: [packStatus([{ name: 'literature-review-outline', title: '文献综述提纲', status: 'missing' }])],
+      assetProblems: [],
+    })
+    const wrapper = mount(ResearchWorkflowsView)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="use-template"]').trigger('click')
+    await findConfirmButton(wrapper).trigger('click')
+    await flushPromises()
+
+    // Creation is never blocked by the skill pack I/O: the workflow exists and
+    // the canvas deep-link fired.
+    expect(workflowsApiMock.createWorkflow).toHaveBeenCalledTimes(1)
+    expect(routerPushMock).toHaveBeenCalledWith({
+      name: 'hermes.workflow',
+      query: { workflowId: 'wf-new' },
+    })
+    expect(skillpacksApiMock.loadSkillPack).toHaveBeenCalledTimes(1)
+    expect(skillpacksApiMock.loadSkillPack).toHaveBeenCalledWith('nature-research')
+    // Statuses were re-fetched at decision time and again after the load, so
+    // the card tags leave the missing state.
+    expect(skillpacksApiMock.listSkillPacks).toHaveBeenCalledTimes(3)
+    expect(wrapper.text()).toContain('research.workflows.skillAutoLoadSuccess')
+  })
+
+  it('never auto-loads modified or conflicted skills and explains where to handle them', async () => {
+    templatesApiMock.listResearchWorkflowTemplates.mockResolvedValue([
+      templateSummary({ id: 'literature-review', name: '文献综述', skills: ['literature-review-outline'] }),
+    ])
+    templatesApiMock.fetchResearchWorkflowTemplate.mockResolvedValue(fullTemplate({
+      id: 'literature-review',
+      nodes: [templateNode('lr-draft', '综述初稿', ['literature-review-outline'])],
+    }))
+    skillpacksApiMock.listSkillPacks.mockResolvedValue({
+      packs: [packStatus([{ name: 'literature-review-outline', title: '文献综述提纲', status: 'modified' }])],
+      assetProblems: [],
+    })
+    const wrapper = mount(ResearchWorkflowsView)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="use-template"]').trigger('click')
+    await findConfirmButton(wrapper).trigger('click')
+    await flushPromises()
+
+    // User-edit protection: modified/conflict copies are NEVER auto-loaded.
+    expect(skillpacksApiMock.loadSkillPack).not.toHaveBeenCalled()
+    expect(routerPushMock).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('research.workflows.skillAutoLoadProtected')
+    expect(wrapper.text()).toContain('文献综述提纲')
+    // The warning stays visible on the notice strip with its dedicated class.
+    expect(wrapper.find('.hub-notice-warning').exists()).toBe(true)
+  })
+
+  it('reports an auto-load failure as an error while keeping the created workflow', async () => {
+    templatesApiMock.listResearchWorkflowTemplates.mockResolvedValue([
+      templateSummary({ id: 'literature-review', name: '文献综述', skills: ['literature-review-outline'] }),
+    ])
+    templatesApiMock.fetchResearchWorkflowTemplate.mockResolvedValue(fullTemplate({
+      id: 'literature-review',
+      nodes: [templateNode('lr-draft', '综述初稿', ['literature-review-outline'])],
+    }))
+    skillpacksApiMock.listSkillPacks.mockResolvedValue({
+      packs: [packStatus([{ name: 'literature-review-outline', title: '文献综述提纲', status: 'outdated' }])],
+      assetProblems: [],
+    })
+    skillpacksApiMock.loadSkillPack.mockRejectedValue(new Error('disk full'))
+    const wrapper = mount(ResearchWorkflowsView)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="use-template"]').trigger('click')
+    await findConfirmButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(skillpacksApiMock.loadSkillPack).toHaveBeenCalledWith('nature-research')
+    expect(wrapper.text()).toContain('research.workflows.skillAutoLoadFailed')
+    expect(wrapper.find('.hub-notice-error').exists()).toBe(true)
+    // The failure is purely about the skill pack: the workflow was still created.
+    expect(workflowsApiMock.createWorkflow).toHaveBeenCalledTimes(1)
+    expect(routerPushMock).toHaveBeenCalled()
+  })
+
+  it('skips the auto-load flow entirely for templates without bound skills', async () => {
+    const wrapper = mount(ResearchWorkflowsView)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="use-template"]').trigger('click')
+    await findConfirmButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(skillpacksApiMock.loadSkillPack).not.toHaveBeenCalled()
+    expect(skillpacksApiMock.listSkillPacks).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).not.toContain('research.workflows.skillAutoLoadSuccess')
+  })
+})
+
 describe('workflow hub store', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -335,6 +574,15 @@ describe('workflow hub store', () => {
     workflowsApiMock.listWorkflows.mockResolvedValue([workflowRecord()])
     workflowsApiMock.createWorkflow.mockResolvedValue(workflowRecord({ id: 'wf-new' }))
     workflowsApiMock.deleteWorkflow.mockResolvedValue(undefined)
+    skillpacksApiMock.listSkillPacks.mockResolvedValue({ packs: [packStatus([])], assetProblems: [] })
+    skillpacksApiMock.loadSkillPack.mockResolvedValue({
+      result: { pack: 'nature-research', target: 'hermes', targetDir: '/skills', profile: 'default', installed: [], updated: [], skipped: [], results: [] },
+      pack: packStatus([], { loaded: true }),
+    })
+    skillpacksApiMock.unloadSkillPack.mockResolvedValue({
+      result: { pack: 'nature-research', target: 'hermes', targetDir: '/skills', profile: 'default', removed: [], skipped: [] },
+      pack: packStatus([]),
+    })
   })
 
   it('loads templates and workflows and tracks state transitions', async () => {
@@ -366,6 +614,98 @@ describe('workflow hub store', () => {
     expect(created?.id).toBe('wf-new')
     expect(store.workflows[0]?.id).toBe('wf-new')
     expect(store.notice).toMatchObject({ kind: 'success' })
+  })
+
+  it('maps bound skill names onto pack statuses and titles, falling back to unknown', async () => {
+    const store = useWorkflowHubStore()
+    skillpacksApiMock.listSkillPacks.mockResolvedValue({
+      packs: [packStatus([
+        { name: 'literature-review-outline', title: '文献综述提纲', status: 'outdated' },
+        { name: 'reviewer-self-check', title: '审稿式自查', status: 'conflict' },
+      ])],
+      assetProblems: [],
+    })
+    await store.refreshSkillStatuses()
+
+    expect(store.skillStatusFor('literature-review-outline')).toBe('outdated')
+    expect(store.skillStatusFor('reviewer-self-check')).toBe('conflict')
+    expect(store.skillStatusFor('never-shipped')).toBe('unknown')
+    expect(store.skillTitleFor('literature-review-outline')).toBe('文献综述提纲')
+    expect(store.skillTitleFor('never-shipped')).toBe('never-shipped')
+
+    skillpacksApiMock.listSkillPacks.mockRejectedValue(new Error('offline'))
+    await store.refreshSkillStatuses()
+    // A failed refresh keeps the last-known statuses (flagged) instead of
+    // wiping the tags; only a hub that never got statuses reports 'unknown'.
+    expect(store.skillStatusFailed).toBe(true)
+    expect(store.skillPacks).toHaveLength(1)
+    expect(store.skillStatusFor('literature-review-outline')).toBe('outdated')
+
+    // A hub backed by a fresh pinia (never fetched statuses) reports unknown.
+    setActivePinia(createPinia())
+    const isolated = useWorkflowHubStore()
+    await isolated.refreshSkillStatuses()
+    expect(isolated.skillStatusFailed).toBe(true)
+    expect(isolated.skillStatusFor('literature-review-outline')).toBe('unknown')
+  })
+
+  it('auto-loads missing/outdated packs on create, never modified or conflicted ones', async () => {
+    const store = useWorkflowHubStore()
+    const boundTemplate = () => fullTemplate({
+      id: 'literature-review',
+      nodes: [templateNode('lr-draft', '综述初稿', ['literature-review-outline'])],
+    })
+    templatesApiMock.listResearchWorkflowTemplates.mockResolvedValue([
+      templateSummary({ id: 'literature-review', name: '文献综述', skills: ['literature-review-outline'] }),
+    ])
+    templatesApiMock.fetchResearchWorkflowTemplate.mockResolvedValue(boundTemplate())
+    await store.refreshTemplates()
+
+    // missing -> load fires (non-blocking, so drain the background work).
+    skillpacksApiMock.listSkillPacks.mockResolvedValue({
+      packs: [packStatus([{ name: 'literature-review-outline', title: '文献综述提纲', status: 'missing' }])],
+      assetProblems: [],
+    })
+    // The load must actually install something for the success notice to fire
+    // (a no-op load is deliberately silent).
+    skillpacksApiMock.loadSkillPack.mockResolvedValue({
+      result: {
+        pack: 'nature-research', target: 'hermes', targetDir: '/skills', profile: 'default',
+        installed: ['literature-review-outline'], updated: [], skipped: [],
+        results: [{ name: 'literature-review-outline', action: 'installed' }],
+      },
+      pack: packStatus([{ name: 'literature-review-outline', title: '文献综述提纲', status: 'installed' }], { loaded: true }),
+    })
+    await store.createFromTemplate('literature-review', '综述流程')
+    await flushPromises()
+    expect(skillpacksApiMock.loadSkillPack).toHaveBeenCalledWith('nature-research')
+    expect(store.notice).toMatchObject({ kind: 'success', key: 'research.workflows.skillAutoLoadSuccess' })
+
+    // modified -> protection path, no load call at all.
+    skillpacksApiMock.loadSkillPack.mockClear()
+    skillpacksApiMock.listSkillPacks.mockResolvedValue({
+      packs: [packStatus([{ name: 'literature-review-outline', title: '文献综述提纲', status: 'modified' }])],
+      assetProblems: [],
+    })
+    templatesApiMock.fetchResearchWorkflowTemplate.mockResolvedValue(boundTemplate())
+    workflowsApiMock.createWorkflow.mockResolvedValue(workflowRecord({ id: 'wf-modified' }))
+    await store.createFromTemplate('literature-review', '综述流程')
+    await flushPromises()
+    expect(skillpacksApiMock.loadSkillPack).not.toHaveBeenCalled()
+    expect(store.notice).toMatchObject({ kind: 'warning', key: 'research.workflows.skillAutoLoadProtected' })
+
+    // conflict -> same protection.
+    skillpacksApiMock.loadSkillPack.mockClear()
+    skillpacksApiMock.listSkillPacks.mockResolvedValue({
+      packs: [packStatus([{ name: 'literature-review-outline', title: '文献综述提纲', status: 'conflict' }])],
+      assetProblems: [],
+    })
+    templatesApiMock.fetchResearchWorkflowTemplate.mockResolvedValue(boundTemplate())
+    workflowsApiMock.createWorkflow.mockResolvedValue(workflowRecord({ id: 'wf-conflict' }))
+    await store.createFromTemplate('literature-review', '综述流程')
+    await flushPromises()
+    expect(skillpacksApiMock.loadSkillPack).not.toHaveBeenCalled()
+    expect(store.notice).toMatchObject({ kind: 'warning' })
   })
 })
 

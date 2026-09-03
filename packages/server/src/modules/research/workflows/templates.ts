@@ -1128,6 +1128,12 @@ const literatureReview: ResearchWorkflowTemplate = {
       id: 'lr-draft',
       title: '综述初稿',
       position: nodePosition(3),
+      // The literature-review-outline skill (nature-research pack) pins the
+      // thematic outline structure, synthesis matrix, and citation discipline
+      // this writing node must follow. The pack must be loaded before the
+      // template can run — the engine's skill preflight enforces it, and the
+      // workflows hub auto-loads it when the template is instantiated.
+      skills: ['literature-review-outline'],
       input: [
         '你是学术综述撰写助手。基于上游的精读笔记撰写一篇结构完整的综述初稿（Markdown）：',
         '1. 标题（H1）与摘要',
@@ -1273,6 +1279,11 @@ const overnightResearch: ResearchWorkflowTemplate = {
       id: 'or-next-steps',
       title: '下一步建议',
       position: nodePosition(3),
+      // The reviewer-self-check skill (nature-research pack) gives this
+      // review-style node the reviewer-perspective checklist (Major/Minor
+      // findings) it applies to the aggregation ledger. Loaded like every
+      // bound pack skill — see the literature-review note above.
+      skills: ['reviewer-self-check'],
       input: [
         '你是过夜科研晨报的下一步建议助手。上游输入是逐批聚合节点产出的台账 JSON：stats（总数/成功/失败/缺失/完成率）、items（逐项结果）、failures（失败与缺失项及原因）、unexpected（计划外结果）、queue（队列概况）。',
         '基于台账生成 3-5 条可执行的下一步建议，必须覆盖以下角度（台账中无对应事项的角度可说明无需处理）：',
