@@ -166,4 +166,44 @@ describe('research artifacts registry', () => {
     expect(missing.status).toBe(404)
     expect(missing.body).toEqual({ error: 'artifact not found' })
   })
+
+  it('deletes an artifact through DELETE /artifacts/:id and clears the row', async () => {
+    const created = await postArtifact({
+      type: 'pdf',
+      title: 'Compiled PDF',
+      preview: { documentId: 'doc-1', byteSize: 2048 },
+    })
+    const id = created.body.artifact.id
+
+    const removed = await dispatch('DELETE', `/api/studio/research/artifacts/${id}`)
+    expect(removed.status).toBe(200)
+    expect(removed.body).toEqual({ ok: true })
+
+    expect(store.getArtifact(id)).toBeNull()
+    expect(store.listArtifacts()).toHaveLength(0)
+
+    const missing = await dispatch('DELETE', '/api/studio/research/artifacts/does-not-exist')
+    expect(missing.status).toBe(404)
+    expect(missing.body).toEqual({ error: 'artifact not found' })
+  })
+
+  it('delete removes only the targeted registry row; the store owns no files on disk', async () => {
+    const first = await postArtifact({ type: 'svg', title: 'Keep me' })
+    const second = await postArtifact({ type: 'html', title: 'Delete me' })
+    const keepId = first.body.artifact.id
+    const deleteId = second.body.artifact.id
+
+    const removed = await dispatch('DELETE', `/api/studio/research/artifacts/${deleteId}`)
+    expect(removed.status).toBe(200)
+
+    const remaining = store.listArtifacts()
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].id).toBe(keepId)
+
+    // The registry is metadata-only: it persists rows in the Web UI home
+    // SQLite database and owns no artifact files on disk, so deletion removes
+    // just the row and must not attempt file cleanup (unlike the paper
+    // library, which unlinks its owned PDFs).
+    expect(remaining[0]).not.toHaveProperty('file_path')
+  })
 })

@@ -2,6 +2,7 @@
 import {
   ARTIFACT_TYPES,
   createArtifact as persistArtifact,
+  deleteArtifact as removeArtifactById,
   getArtifact as findArtifactById,
   listArtifacts as queryArtifacts,
   type ArtifactListFilter,
@@ -105,4 +106,11 @@ export function getArtifactPreview(id: string): ArtifactPreviewPayload | null {
     preview: artifact.preview,
     updated_at: artifact.updated_at,
   }
+}
+
+// Deleting a registry entry removes the metadata row only: the artifacts store
+// owns no files (compiled PDFs stay servable through the latex module, run
+// files through the workflow proxy).
+export function deleteArtifact(id: string): boolean {
+  return removeArtifactById(id) !== null
 }
